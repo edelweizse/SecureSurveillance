@@ -1,0 +1,19 @@
+ingest:
+  type: webcam
+  src_id: cam0
+
+  webcam:
+    device: "/dev/video0"
+    width: 1280
+    height: 720
+    fps: 30
+    mjpg: true
+
+  file:
+    path: "assets/test_videos/input.mp4"
+    loop: true
+
+  rtsp:
+    url: "rtsp://user:pass@ip/stream"
+    latency_ms: 100
+    tcp: true
