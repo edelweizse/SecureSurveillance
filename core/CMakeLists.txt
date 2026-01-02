@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 
-add_library(ss_core)
+add_library(ss_core
+        src/encode/mjpeg_server.cpp)
 
 # Headers
 file(GLOB_RECURSE SS_CORE_HEADERS
@@ -15,7 +16,7 @@ file(GLOB_RECURSE SS_CORE_SOURCES CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cxx
 )
 target_sources(ss_core PRIVATE ${SS_CORE_SOURCES} ${SS_CORE_HEADERS})
-target_include_directories(ss_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(ss_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include PRIVATE ${CMAKE_SOURCE_DIR}/libs)
 
 # Compile Options
 target_compile_features(ss_core PUBLIC cxx_std_17)
@@ -51,3 +52,7 @@ target_compile_definitions(ss_core PUBLIC SS_HAS_GST=1)
 # YAML
 find_package(yaml-cpp REQUIRED)
 target_link_libraries(ss_core PRIVATE yaml-cpp)
+
+# Threads
+find_package(Threads REQUIRED)
+target_link_libraries(ss_core PRIVATE Threads::Threads)

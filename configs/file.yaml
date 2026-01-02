@@ -1,0 +1,7 @@
+ingest:
+  type: "file"
+  src_id: "file0"
+
+  file:
+    path: "assets/test_video.mp4"
+    loop: false
