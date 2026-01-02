@@ -1,18 +1,24 @@
 #include <ingest/gst_frame_source.hpp>
+#include <ingest/frame_source_factory.hpp>
 #include <common/config.hpp>
 #include <encode/mjpeg_server.hpp>
 
 #include <opencv2/opencv.hpp>
-#include <iostream>
 #include <yaml-cpp/exceptions.h>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+#include <atomic>
+#include <csignal>
 
-#include "ingest/frame_source_factory.hpp"
-
-static void print_help() {
-    std::cerr << "Usage: ss_core_service <path/to/config.yaml>\n";
-}
+static std::atomic<bool> g_running(true);
+static void handle_sigint(int) {g_running = false;}
 
 int main(int argc, char** argv) {
+    std::signal(SIGINT, handle_sigint);
+    std::signal(SIGTERM, handle_sigint);
+
     std::string cfg_path = "../../../configs/webcam.yaml";
     if (argc >= 2) cfg_path = argv[1];
     else {
@@ -45,14 +51,10 @@ int main(int argc, char** argv) {
 
     std::vector<int> jpeg_params = {cv::IMWRITE_JPEG_QUALITY, 100};
 
-    cv::namedWindow("Ingest Debug", cv::WINDOW_NORMAL);
-    cv::resizeWindow("Ingest Debug",
-                     cfg.ingest.webcam.width > 0 ? cfg.ingest.webcam.width : 1280,
-                     cfg.ingest.webcam.height > 0 ? cfg.ingest.webcam.height : 720);
     ss::FramePacket fp;
 
     int empty_count = 0;
-    while (true) {
+    while (g_running) {
         if (!src->read(fp, 1000)) {
             if (++empty_count % 60 == 0)
                 std::cerr << "No frames yet..\n";
@@ -65,8 +67,6 @@ int main(int argc, char** argv) {
             continue;
         };
 
-        cv::imshow("Ingest Debug", fp.bgr);
-
         std::vector<uint8_t> jpeg;
         cv::imencode(".jpg", fp.bgr, jpeg, jpeg_params);
         server.push_jpeg(std::move(jpeg));
@@ -74,8 +74,9 @@ int main(int argc, char** argv) {
             std::string("{\"source\":\"") + cfg.ingest.src_id + "\",\"frame_id\":" + std::to_string(fp.frame_id) + "}"
         );
 
-        if (cv::waitKey(1) == 27) break;
+        if (cv::waitKey(1) == 27) g_running = false;
     }
+    std::cerr << "Shutting down...\n";
     src->stop();
     server.stop();
     return 0;
