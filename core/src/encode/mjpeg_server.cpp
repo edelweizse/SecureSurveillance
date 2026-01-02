@@ -98,6 +98,7 @@ namespace ss {
 
         server_thread_ = std::thread([this] {
             std::cout << "[MJPEG] Listening on http://" << host_ << ":" << port_ << "\n";
+            std::cout << "[MJPEG] Video stream on http://" << host_ << ":" << port_ << "/video" << "\n";
             impl_->svr.listen(host_.c_str(), port_);
         });
 

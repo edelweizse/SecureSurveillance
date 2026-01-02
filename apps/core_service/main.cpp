@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
     std::signal(SIGTERM, handle_sigint);
 
-    std::string cfg_path = "../../../configs/webcam.yaml";
+    std::string cfg_path = "configs/webcam.yaml";
     if (argc >= 2) cfg_path = argv[1];
     else {
         std::cerr << "Using default config" << cfg_path << "\n";
