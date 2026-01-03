@@ -10,29 +10,27 @@ namespace ss {
                    + ",framerate=" + std::to_string(c.fps) + "/1 ! "
                    "jpegdec ! videoconvert ! video/x-raw,format=BGR ! "
                    "appsink name=sink max-buffers=2 drop=true sync=false";
-        } else {
-            return "v4l2src device=" + c.device + " ! "
-                   "video/x-raw,width=" + std::to_string(c.width)
-                   + ",height=" + std::to_string(c.height)
-                   + ",framerate=" + std::to_string(c.fps) + "/1 ! "
-                   "videoconvert ! video/x-raw,format=BGR ! "
-                   "appsink name=sink max-buffers=2 drop=true sync=false";
         }
+        return "v4l2src device=" + c.device + " ! "
+               "video/x-raw,width=" + std::to_string(c.width)
+               + ",height=" + std::to_string(c.height)
+               + ",framerate=" + std::to_string(c.fps) + "/1 ! "
+               "videoconvert ! video/x-raw,format=BGR ! "
+               "appsink name=sink max-buffers=2 drop=true sync=false";
     }
 
     static std::string file_pipeline(const FileConfig& c) {
         return "filesrc location=\"" + c.path + "\" ! "
-               "decodebin ! videoconvert ! video/x-raw,fromat=BGR ! "
+               "decodebin ! videoconvert ! video/x-raw,format=BGR ! "
                "appsink name=sink max-buffers=2 drop=true sync=false";
     }
 
     static std::string rtsp_pipeline(const RTSPConfig& c) {
-        std::string prot = c.tcp ? "tcp" : "udp";
+        std::string proto = c.tcp ? "tcp" : "udp";
         return "rtspsrc location=\"" + c.url +
                "\" latency=" + std::to_string(c.latency_ms) +
-               " protocols=" + prot + " drop-on-latency=true ! "
-               "rtph264depay ! h264parse ! avdec_h264 ! "
-               "videoconvert ! video/x-raw,format=BGR ! "
+               " protocols=" + proto + " drop-on-latency=true ! "
+               "decodebin ! videoconvert ! video/x-raw,format=BGR ! "
                "appsink name=sink max-buffers=2 drop=true sync=false";
     }
 

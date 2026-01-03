@@ -19,10 +19,11 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
     std::signal(SIGTERM, handle_sigint);
 
-    std::string cfg_path = "configs/webcam.yaml";
-    if (argc >= 2) cfg_path = argv[1];
-    else {
-        std::cerr << "Using default config" << cfg_path << "\n";
+    std::string cfg_path = "../../../configs/rtsp.yaml";
+    if (argc >= 2) {
+        cfg_path = argv[1];
+    } else {
+        std::cerr << "Using default config: " << cfg_path << "\n";
     }
 
     ss::AppConfig cfg;
@@ -55,7 +56,7 @@ int main(int argc, char** argv) {
 
     int empty_count = 0;
     while (g_running) {
-        if (!src->read(fp, 1000)) {
+        if (!src->read(fp, 5000)) {
             if (++empty_count % 60 == 0)
                 std::cerr << "No frames yet..\n";
             continue;
@@ -71,7 +72,7 @@ int main(int argc, char** argv) {
         cv::imencode(".jpg", fp.bgr, jpeg, jpeg_params);
         server.push_jpeg(std::move(jpeg));
         server.push_meta(
-            std::string("{\"source\":\"") + cfg.ingest.src_id + "\",\"frame_id\":" + std::to_string(fp.frame_id) + "}"
+            std::string(R"({"source":")") + cfg.ingest.src_id + R"(","frame_id":)" + std::to_string(fp.frame_id) + "}"
         );
 
         if (cv::waitKey(1) == 27) g_running = false;

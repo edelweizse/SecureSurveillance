@@ -1,0 +1,7 @@
+ingest:
+  type: "rtsp"
+  src_id: "stream0"
+  rtsp:
+    url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
+    tcp: true
+    latency: 3000

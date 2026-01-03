@@ -3,5 +3,5 @@ ingest:
   src_id: "file0"
 
   file:
-    path: "assets/test_video.mp4"
+    path: "../../../assets/2026-01-03 23-17-30.mkv"
     loop: false
