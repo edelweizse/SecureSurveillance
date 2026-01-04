@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-add_library(ss_core
-        src/encode/mjpeg_server.cpp)
+add_library(ss_core)
 
 # Headers
 file(GLOB_RECURSE SS_CORE_HEADERS

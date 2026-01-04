@@ -1,37 +1,69 @@
 #pragma once
 
 #include <string>
+#include <vector>
+#include <unordered_map>
 
 namespace ss {
-    struct WebConfig {
-        std::string device = "/dev/video0";
-        int width = 1280;
-        int height = 720;
-        int fps = 30;
-        bool mjpg = true;
+    struct WebcamConfig {
+        std::string device;
+        int width;
+        int height;
+        int fps;
+        bool mjpg;
     };
 
     struct FileConfig {
-        std::string path = "assets/test_video.mp4";
-        bool loop = true;
+        std::string path;
+        bool loop;
     };
 
     struct RTSPConfig {
         std::string url;
-        int latency_ms = 100;
-        bool tcp = true;
+        int latency_ms;
+        bool tcp;
+    };
+
+    struct ReplicateConfig {
+        int count = 1;
+        std::vector<std::string> ids;
+    };
+
+    struct OutputConfig {
+        int width = 0;
+        int height = 0;
+        bool keep_aspect = true;
+        std::string interp = "linear"; // nearest|cubic|linear|area
+        int jpg_quality = 100;
+    };
+
+    struct OutputsConfig {
+        std::unordered_map<std::string, OutputConfig> profiles;
     };
 
     struct IngestConfig {
-        std::string type = "web"; // web | file | rtsp
-        std::string src_id = "cam0";
-        WebConfig webcam;
+        std::string type; // webcam|file|rtsp
+        std::string id;
+
+        WebcamConfig webcam;
         FileConfig file;
         RTSPConfig rtsp;
+
+        ReplicateConfig replicate;
+
+        OutputConfig output;
+
+        OutputsConfig outputs;
+    };
+
+    struct ServerConfig {
+        std::string url;
+        int port;
     };
 
     struct AppConfig {
-        IngestConfig ingest;
+        ServerConfig server;
+        std::vector<IngestConfig> streams;
     };
 
     AppConfig load_config_yaml(const std::string& path);

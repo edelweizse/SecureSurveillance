@@ -9,14 +9,12 @@
 namespace ss {
     bool GstFrameSource::gst_inited_ = false;
 
-    GstFrameSource::GstFrameSource(std::string pipeline, std::string src_id)
-        : pipeline_str_(std::move(pipeline)), src_id_(std::move(src_id)) {}
+    GstFrameSource::GstFrameSource(std::string pipeline, std::string id, std::string sink_name)
+        : pipeline_str_(std::move(pipeline)), id_(std::move(id)), sink_name_(std::move(sink_name)) {}
 
     bool GstFrameSource::start() {
-        if (!gst_inited_) {
-            gst_init(nullptr, nullptr);
-            gst_inited_ = true;
-        }
+        static std::once_flag gst_init_flag;
+        std::call_once(gst_init_flag, [] { gst_init(nullptr, nullptr); });
 
         GError* err = nullptr;
         pipeline_ = gst_parse_launch(pipeline_str_.c_str(), &err);
@@ -30,10 +28,9 @@ namespace ss {
             return false;
         }
 
-        sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), "sink");
+        sink_ = gst_bin_get_by_name(GST_BIN(pipeline_), sink_name_.c_str());
         if (!sink_) {
-            std::cerr << "[GStreamer] appsink named 'sink' not found. "
-                     << "Make sure pipeline ends with: appsink=sink";
+            std::cerr << "[GStreamer] appsink named " << sink_name_ <<" not found.\n";
             stop();
             return false;
         }
@@ -100,11 +97,8 @@ namespace ss {
         cv::Mat tmp(height, width, CV_8UC3, (void*)map.data, stride);
         out.bgr = tmp.clone();
 
-        out.width = width;
-        out.height = height;
         out.pts_ns = (buffer->pts == GST_CLOCK_TIME_NONE) ? 0 : static_cast<int64_t>(buffer->pts);
         out.frame_id = frame_id_++;
-        out.src_id = src_id_;
 
         gst_buffer_unmap(buffer, &map);
         gst_sample_unref(sample);
@@ -112,10 +106,10 @@ namespace ss {
     }
 
     void GstFrameSource::stop() {
-        if (!pipeline_) {
+        if (pipeline_) {
             gst_element_set_state(pipeline_, GST_STATE_NULL);
 
-            if (!sink_) {
+            if (sink_) {
                 gst_object_unref(sink_);
                 sink_ = nullptr;
             }

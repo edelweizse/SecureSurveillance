@@ -1,0 +1,52 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+streams:
+  - id: "file0"
+    type: "file"
+
+    file:
+      path: "../../../assets/test.mp4"
+
+    output:
+      width: 640
+      height: 480
+      keep_aspect: true
+      interp: "linear"
+      jpeg_quality: 100
+
+    replicate:
+      count: 1
+#  - id: "cam0"
+#    type: "webcam"
+#
+#    webcam:
+#      device: "/dev/video0"
+#      width: 1920
+#      height: 1080
+#      fps: 30
+#      mjpg: true
+#
+#    output:
+#      width: 1280
+#      height: 720
+#      keep_aspect: true
+#      interp: "linear"
+#      jpeg_quality: 100
+
+#  - id: "rtsp0"
+#    type: "rtsp"
+#
+#    rtsp:
+#      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
+#      tcp: true
+#      latency_ms: 1000
+#
+#    outputs:
+#      main:
+#        width: 1280
+#        height: 720
+#        keep_aspect: true
+#        interp: linear
+#        jpeg_quality: 100

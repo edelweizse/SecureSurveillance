@@ -1,14 +1,20 @@
 #pragma once
 
-#include <ingest/frame_packet.hpp>
+#include <opencv2/core.hpp>
 
 namespace ss {
-    class IFrameSource {
-    public:
-        virtual ~IFrameSource() = default;
 
+    struct FramePacket {
+        cv::Mat bgr;
+        int64_t pts_ns = 0;
+        int64_t frame_id = 0;
+    };
+
+    struct IFrameSource {
+        virtual ~IFrameSource() = default;
         virtual bool start() = 0;
-        virtual bool read(FramePacket& out, int timeout_ms = 1000) = 0;
         virtual void stop() = 0;
+        virtual bool read(FramePacket& out, int timeout_ms) = 0;
+        virtual const std::string& id() const = 0;
     };
 }

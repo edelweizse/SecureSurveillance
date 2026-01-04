@@ -7,11 +7,13 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <memory>
+#include <unordered_map>
 
 namespace ss {
     class MJPEGServer {
     public:
-        MJPEGServer(std::string& host, int port);
+        MJPEGServer(std::string host, int port);
         ~MJPEGServer();
 
         // Start http server in bg thread
@@ -19,25 +21,41 @@ namespace ss {
         void stop();
 
         // push latest jpeg frame in bytes
-        void push_jpeg(std::vector<uint8_t>&& jpeg);
+        void push_jpeg(const std::string& stream_key,
+                       std::shared_ptr<const std::vector<uint8_t>> jpeg);
 
-        // optionally push json metadata
-        void push_meta(std::string&& json);
+        // optionally push JSON metadata
+        void push_meta(const std::string& stream_key, std::string json);
+
+        void register_stream(const std::string& stream_key);
+
+        std::vector<std::string> list_streams() const;
+
     private:
         struct Impl;
-        Impl* impl_;
+        Impl* impl_ = nullptr;
+
+        struct StreamState {
+            mutable std::mutex mtx;
+            std::condition_variable cv;
+
+            std::shared_ptr<const std::vector<uint8_t>> last_jpeg;
+            uint64_t seq = 0;
+
+            mutable std::mutex meta_mtx;
+            std::string last_meta;
+        };
+
+        std::shared_ptr<StreamState> get_or_create_(const std::string& stream_key) const;
+        std::shared_ptr<StreamState> get_(const std::string& stream_key) const;
+
         std::string host_;
         int port_;
 
         std::thread server_thread_;
         std::atomic<bool> running_{false};
 
-        std::mutex mtx_;
-        std::condition_variable cv_;
-        std::vector<uint8_t> last_jpeg_;
-        uint64_t seq_{0};
-
-        std::mutex meta_mtx_;
-        std::string last_meta_ = "{}";
+        mutable std::mutex streams_mtx_;
+        mutable std::unordered_map<std::string, std::shared_ptr<StreamState>> streams_;
     };
 }
