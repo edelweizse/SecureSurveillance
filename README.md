@@ -9,30 +9,18 @@ This project implements PPFR framework designed for deployment on resource-const
 The framework provides a modular architecture for real-time video frame ingestion, models inference and streaming the results. The current implementation focuses on efficient frame ingestion and MJPEG streaming, with planned extensions for detection, tracking, recognition, and analytics modules.
 ## System Architecture
 
-### Core Components
+![](architecture.png)
 
-**Frame Ingestion Layer**
-- Multi-source frame acquisition (webcam, file, RTSP)
-- GStreamer-based pipeline implementation
-- Configurable resolution, frame rate, and encoding parameters
+## Development Status
 
-**Encoding and Streaming Layer**
-- MJPEG encoding with configurable quality parameters
-- HTTP-based streaming server (port 8080)
-- Thread-safe frame buffering and metadata management
-
-**Web Interface**
-- Streamlit-based monitoring dashboard
-- Real-time video stream visualization
-- Metadata display and system status monitoring
-
-### Planned Extensions
-
-The following modules are planned for future implementation:
-- **Detection Module**: Object and face detection capabilities
-- **Tracking Module**: Multi-object tracking across temporal sequences
-- **Recognition Module**: Privacy-preserving face recognition algorithms
-- **Analytics Module**: Behavioral analysis and statistical processing
+| Component | Status |
+|-----------|--------|
+| IngestionManager | Implemented |
+| Inference | Planned |
+| Analytics | Planned |
+| Anonymizer | Planned |
+| Encoder/Streamer | Planned |
+| UI | WIP |
 
 ## Target Platform Specifications
 
@@ -60,45 +48,31 @@ The following modules are planned for future implementation:
 
 ## Configuration
 
-System configuration is managed through YAML files located in the `configs/` directory. The framework supports three frame source types:
-
-### Webcam Source
+System configuration is managed through YAML files located in the `configs/` directory. Example config.yaml:
 
 ```yaml
-ingest:
-  type: webcam
-  src_id: cam0
-  webcam:
-    device: "/dev/video0"
-    width: 1280
-    height: 720
-    fps: 30
-    mjpg: true
-```
+server:
+  host: "0.0.0.0"
+  port: 8080
+streams:
+  - id: "rtsp0"
+    type: "rtsp" # file|webcam|rtsp
 
-**Performance Considerations**: For CPU-only ARM platforms, resolutions of 640x480 or 800x600 are recommended to maintain real-time performance.
+    rtsp:
+      url: "rtsp://example/url"
+      tcp: true
+      fps: 15
+      latency_ms: 1000
 
-### File Source
+    output:
+      width: 1280
+      height: 720
+      keep_aspect: true
+      interp: "linear" # linear|cubic|area|nearest
+      jpeg_quality: 85
 
-```yaml
-ingest:
-  type: file
-  src_id: file0
-  file:
-    path: "assets/test_video.mp4"
-    loop: false
-```
-
-### RTSP Source
-
-```yaml
-ingest:
-  type: rtsp
-  src_id: rtsp0
-  rtsp:
-    url: "rtsp://example.com/stream"
-    latency_ms: 100
-    tcp: true
+    replicate:
+      count: 2
 ```
 
 ## Usage
@@ -112,8 +86,11 @@ ingest:
 If no configuration path is specified, the system defaults to `configs/webcam.yaml`.
 
 The service initializes the following endpoints:
-- MJPEG video stream: `http://0.0.0.0:8080/video`
-- Metadata endpoint: `http://0.0.0.0:8080/meta`
+- MJPEG video stream: `http://host:port/video/<src_id>/<profile>`
+- Metadata endpoint: `http://host:port/meta/<src_id>/<profile>`
+- Available streams: `http://host:port/streams`
+- Last frame from stream: `http://host:port/snapshot/<src_id>/<profile>`
+- Health: `http://host:port/health`
 
 ### Web Interface
 
@@ -127,11 +104,11 @@ The interface is accessible at `http://localhost:8501`
 
 ### Endpoints
 
-**GET /video**
+#### GET /video/<src_id>/<profile>
 - **Content-Type**: `multipart/x-mixed-replace; boundary=--boundary`
 - **Description**: Continuous MJPEG video stream
 
-**GET /meta**
+#### GET /meta/<src_id>/<profile>
 - **Content-Type**: `application/json`
 - **Description**: Frame metadata in JSON format
 
@@ -139,8 +116,12 @@ The interface is accessible at `http://localhost:8501`
 
 ```json
 {
-  "source": "cam0",
-  "frame_id": 12345
+  "stream_id": "rtsp0_0",
+  "profile": "main",
+  "frame_id":425,
+  "pts_ns":103806765745,
+  "w":1280,
+  "h":720
 }
 ```
 
@@ -165,16 +146,3 @@ For optimal performance on ARM platforms:
 1. **Resolution**: Use 640x480 or 800x600 for real-time processing
 2. **Frame Rate**: Limit to 15-20 FPS if frame drops occur
 4. **Memory**: Monitor memory usage; consider frame buffer size reduction if needed
-
-## Development Status
-
-| Component | Status |
-|-----------|--------|
-| Frame Ingestion | Implemented |
-| MJPEG Encoding | Implemented |
-| HTTP Streaming | Implemented |
-| Web Interface | Implemented |
-| Detection Module | Planned |
-| Tracking Module | Planned |
-| Recognition Module (PPFR) | Planned |
-| Analytics Module | Planned |

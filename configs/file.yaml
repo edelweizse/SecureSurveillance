@@ -8,7 +8,7 @@ streams:
 
     file:
       path: "../../../assets/test.mp4"
-      fps: 15
+      fps: 10
 
     output:
       width: 1280

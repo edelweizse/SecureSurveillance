@@ -7,8 +7,9 @@ streams:
     type: "rtsp"
 
     rtsp:
-      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/people"
+      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
       tcp: true
+      fps: 30
       latency_ms: 1000
 
     output:

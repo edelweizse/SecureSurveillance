@@ -22,7 +22,7 @@ namespace ss {
     static std::string file_pipeline(const FileConfig& c, const std::string& sink_name) {
         return "filesrc location=\"" + c.path + "\" ! "
                "decodebin ! videoconvert ! "
-               "videorate ! video/x-raw,format=BGR, framerate=" + std::to_string(c.fps) + "/1 ! "
+               "videorate max-rate=" + std::to_string(c.fps) + " ! video/x-raw,format=BGR ! "
                "appsink name=" + sink_name + " max-buffers=2 drop=true sync=true";
     }
 
@@ -32,7 +32,7 @@ namespace ss {
                "\" latency=" + std::to_string(c.latency_ms) +
                " protocols=" + proto + " drop-on-latency=true ! "
                "decodebin ! videoconvert ! "
-                "videorate drop-only=true ! video/x-raw,format=BGR,framerate=" + std::to_string(c.fps) + "/1 ! "
+               "videorate drop-only=true max-rate=" + std::to_string(c.fps) + " ! video/x-raw,format=BGR ! "
                "appsink name=" + sink_name + " max-buffers=2 drop=true sync=true";
     }
 
