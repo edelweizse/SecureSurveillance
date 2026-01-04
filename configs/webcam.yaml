@@ -1,10 +1,24 @@
-ingest:
-  type: webcam
-  src_id: cam0
+server:
+  host: "0.0.0.0"
+  port: 8080
 
-  webcam:
-    device: "/dev/video0"
-    width: 1920
-    height: 1080
-    fps: 30
-    mjpg: true
+streams:
+  - id: "cam0"
+    type: "webcam"
+
+    webcam:
+      device: "/dev/video0"
+      width: 1280
+      height: 720
+      fps: 15
+      mjpg: true
+
+    output:
+      width: 1280
+      height: 720
+      keep_aspect: true
+      interp: "linear"
+      jpeg_quality: 75
+
+    replicate:
+      count: 1

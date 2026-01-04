@@ -15,12 +15,14 @@ namespace ss {
 
     struct FileConfig {
         std::string path;
+        int fps;
         bool loop;
     };
 
     struct RTSPConfig {
         std::string url;
         int latency_ms;
+        int fps;
         bool tcp;
     };
 

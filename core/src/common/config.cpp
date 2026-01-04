@@ -33,6 +33,7 @@ namespace ss {
         FileConfig c;
         if (!fc) return c;
         c.path = get_str(fc, "path", "/");
+        c.fps = get_int(fc, "fps", 30);
         c.loop = get_bool(fc, "loop", false);
         return c;
     }
@@ -41,6 +42,7 @@ namespace ss {
         RTSPConfig c;
         if (!rc) return c;
         c.url = get_str(rc, "url", "/");
+        c.fps = get_int(rc, "fps", 30);
         c.latency_ms = get_int(rc, "latency_ms", 1000);
         c.tcp = get_bool(rc, "tcp", true);
         return c;

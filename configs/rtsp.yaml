@@ -1,7 +1,22 @@
-ingest:
-  type: "rtsp"
-  src_id: "stream0"
-  rtsp:
-    url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
-    tcp: true
-    latency: 3000
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+streams:
+  - id: "rtsp0"
+    type: "rtsp"
+
+    rtsp:
+      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/people"
+      tcp: true
+      latency_ms: 1000
+
+    output:
+      width: 1280
+      height: 720
+      keep_aspect: true
+      interp: "linear"
+      jpeg_quality: 75
+
+    replicate:
+      count: 2

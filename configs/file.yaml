@@ -1,7 +1,21 @@
-ingest:
-  type: "file"
-  src_id: "file0"
+server:
+  host: "0.0.0.0"
+  port: 8080
 
-  file:
-    path: "../../../assets/2026-01-03 23-17-30.mkv"
-    loop: false
+streams:
+  - id: "file0"
+    type: "file"
+
+    file:
+      path: "../../../assets/test.mp4"
+      fps: 15
+
+    output:
+      width: 1280
+      height: 720
+      keep_aspect: true
+      interp: "linear"
+      jpeg_quality: 75
+
+    replicate:
+      count: 2

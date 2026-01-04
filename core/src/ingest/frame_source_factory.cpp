@@ -21,8 +21,9 @@ namespace ss {
 
     static std::string file_pipeline(const FileConfig& c, const std::string& sink_name) {
         return "filesrc location=\"" + c.path + "\" ! "
-               "decodebin ! videoconvert ! video/x-raw,format=BGR ! "
-               "appsink name=" + sink_name + " max-buffers=2 drop=true sync=false";
+               "decodebin ! videoconvert ! "
+               "videorate ! video/x-raw,format=BGR, framerate=" + std::to_string(c.fps) + "/1 ! "
+               "appsink name=" + sink_name + " max-buffers=2 drop=true sync=true";
     }
 
     static std::string rtsp_pipeline(const RTSPConfig& c, const std::string& sink_name) {
@@ -30,8 +31,9 @@ namespace ss {
         return "rtspsrc location=\"" + c.url +
                "\" latency=" + std::to_string(c.latency_ms) +
                " protocols=" + proto + " drop-on-latency=true ! "
-               "decodebin ! videoconvert ! video/x-raw,format=BGR ! "
-               "appsink name=" + sink_name + " max-buffers=2 drop=true sync=false";
+               "decodebin ! videoconvert ! "
+                "videorate drop-only=true ! video/x-raw,format=BGR,framerate=" + std::to_string(c.fps) + "/1 ! "
+               "appsink name=" + sink_name + " max-buffers=2 drop=true sync=true";
     }
 
     std::unique_ptr<IFrameSource> make_frame_source(const IngestConfig& cfg) {
