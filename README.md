@@ -13,14 +13,14 @@ The framework provides a modular architecture for real-time video frame ingestio
 
 ## Development Status
 
-| Component | Status |
-|-----------|--------|
-| IngestionManager | Implemented |
-| Inference | Planned |
-| Analytics | Planned |
-| Anonymizer | Planned |
-| Encoder/Streamer | Planned |
-| UI | WIP |
+| Component | Status                  |
+|-----------|-------------------------|
+| IngestionManager | Implemented             |
+| Inference | Planned                 |
+| Analytics | Planned                 |
+| Anonymizer | Planned                 |
+| Encoder/Streamer | MJPEG now, later WebRTC |
+| UI | WIP                     |
 
 ## Target Platform Specifications
 
