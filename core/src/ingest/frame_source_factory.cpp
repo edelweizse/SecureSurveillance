@@ -31,7 +31,7 @@ namespace ss {
         return "rtspsrc location=\"" + c.url +
                "\" latency=" + std::to_string(c.latency_ms) +
                " protocols=" + proto + " drop-on-latency=true ! "
-               "decodebin ! videoconvert ! "
+               "rtph264depay ! h264parse ! avdec_h264 ! videoconvert ! "
                "videorate drop-only=true max-rate=" + std::to_string(c.fps) + " ! video/x-raw,format=BGR ! "
                "appsink name=" + sink_name + " max-buffers=2 drop=true sync=true";
     }

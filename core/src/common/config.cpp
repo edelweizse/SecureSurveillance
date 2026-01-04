@@ -62,9 +62,11 @@ namespace ss {
         if (!o) return c;
         c.width = get_int(o, "width", c.width);
         c.height = get_int(o, "height", c.height);
+        c.fps = get_int(o, "fps", c.fps);
+        c.format = get_str(o, "format", c.format);
         c.keep_aspect = get_bool(o, "keep_aspect", c.keep_aspect);
         c.interp = get_str(o, "interp", c.interp);
-        c.jpg_quality = get_int(o, "jpg_quality", c.jpg_quality);
+        c.jpeg_quality = get_int(o, "jpeg_quality", c.jpeg_quality);
         return c;
     }
 

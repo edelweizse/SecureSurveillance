@@ -34,9 +34,11 @@ namespace ss {
     struct OutputConfig {
         int width = 0;
         int height = 0;
+        int fps = 0;
         bool keep_aspect = true;
         std::string interp = "linear"; // nearest|cubic|linear|area
-        int jpg_quality = 100;
+        std::string format = "BGR";
+        int jpeg_quality = 75;
     };
 
     struct OutputsConfig {

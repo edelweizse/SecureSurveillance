@@ -1,7 +1,5 @@
 #include <common/config.hpp>
-#include <common/resize.hpp>
 #include <encode/mjpeg_server.hpp>
-#include <ingest/frame_source_factory.hpp>
 
 #include <opencv2/opencv.hpp>
 #include <yaml-cpp/exceptions.h>
@@ -12,6 +10,9 @@
 #include <vector>
 #include <atomic>
 #include <csignal>
+
+#include "ingest/dual_source_factory.hpp"
+#include "ingest/gst_dual_source.hpp"
 
 static std::atomic<bool> g_running(true);
 static void handle_sigint(int) { g_running = false; }
@@ -47,88 +48,51 @@ std::vector<ss::IngestConfig> expand_replicas(const std::vector<ss::IngestConfig
     return out;
 }
 
-static std::vector<std::pair<std::string, ss::OutputConfig>> output_profiles(const ss::IngestConfig& cfg) {
-    std::vector<std::pair<std::string, ss::OutputConfig>> out;
-
-    if (!cfg.outputs.profiles.empty()) {
-        out.reserve(cfg.outputs.profiles.size());
-        for (const auto& kv : cfg.outputs.profiles) {
-            out.push_back({kv.first, kv.second});
-        }
-        std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a.first < b.first; });
-        return out;
-    }
-
-    out.push_back({"main", cfg.output});
-    return out;
-}
-
 static void run_src_worker(const ss::IngestConfig& cfg, ss::MJPEGServer& server) {
-    std::unique_ptr<ss::IFrameSource> src;
+    std::unique_ptr<ss::GstDualSource> src;
     try {
-        src = ss::make_frame_source(cfg);
+        src = ss::make_dual_source(cfg);
     } catch (const std::exception& e) {
-        std::cerr << "[worker:" << cfg.id << "] Failed to create source: " << e.what() << "\n";
+        std::cerr << "[worker:" << cfg.id << "] Failed to create dual source: " << e.what() << "\n";
         return;
     }
 
     if (!src->start()) {
-        std::cerr << "[worker:" << cfg.id << "] Failed to start source.\n";
+        std::cerr << "[worker:" << cfg.id << "] Failed to start dual source.\n";
         return;
     }
 
-    const auto profiles = output_profiles(cfg);
+    const std::string inf_key = cfg.id + "/inf";
+    const std::string ui_key = cfg.id + "/ui";
 
     ss::FramePacket fp;
-    int empty_count = 0;
+    ss::JpegPacket jp;
 
     while (g_running) {
-        if (!src->read(fp, 5000)) {
-            // if (++empty_count % 120 == 0) {
-            //     std::cerr << "[worker:" + cfg.id + "] No frames yet..\n";
-            // }
-            continue;
+        if (src->read_ui(jp, 100)) {
+            server.push_jpeg(ui_key, jp.jpeg);
+
+            std::string meta =
+                "{"
+                "\"stream_id\":\"" + cfg.id + "\","
+                "\"profile\":\"ui\","
+                "\"frame_id\":" + std::to_string(jp.frame_id) + ","
+                "\"pts_ns\":" + std::to_string(jp.pts_ns) +
+                "}";
+            server.push_meta(ui_key, std::move(meta));
         }
-        empty_count = 0;
+        if (src->read_inference(fp, 100)) {
+            std::string meta =
+                "{"
+                "\"stream_id\":\"" + cfg.id + "\","
+                "\"profile\":\"inf\","
+                "\"frame_id\":" + std::to_string(fp.frame_id) + ","
+                "\"pts_ns\":" + std::to_string(fp.pts_ns) + ","
+                "\"w\":" + std::to_string(fp.bgr.cols) + ","
+                "\"h\":" + std::to_string(fp.bgr.rows) +
+                "}";
+            server.push_meta(inf_key, std::move(meta));
 
-        if (fp.bgr.empty()) continue;
-
-        for (const auto& pr : profiles) {
-            const std::string& profile = pr.first;
-            const ss::OutputConfig oc = pr.second;
-
-            const int interp = ss::interp_from_str(oc.interp);
-
-            cv::Mat out = ss::resize_frame(
-                fp.bgr,
-                oc.width,
-                oc.height,
-                oc.keep_aspect,
-                interp
-            );
-
-            std::vector<int> jpeg_params = { cv::IMWRITE_JPEG_QUALITY, oc.jpg_quality };
-            std::vector<uint8_t> jpeg;
-            if (!cv::imencode(".jpg", out, jpeg, jpeg_params)) {
-                std::cerr << "[worker:" << cfg.id << "] imencode failed for profile = " << profile << "\n";
-                continue;
-            }
-
-            auto jpeg_ptr = std::make_shared<const std::vector<uint8_t>>(std::move(jpeg));
-            const std::string stream_key = cfg.id + "/" + profile;
-
-            std::string stream_meta =
-                std::string("{") +
-                R"("stream_id":")" + cfg.id + "\"," +
-                R"("profile":")" + profile + "\"," +
-                R"("frame_id":)" + std::to_string(fp.frame_id) + "," +
-                R"("pts_ns":)" + std::to_string(fp.pts_ns) + "," +
-                R"("w":)" + std::to_string(out.cols) + "," +
-                R"("h":)" + std::to_string(out.rows) +
-                std::string("}");
-
-            server.push_jpeg(stream_key, jpeg_ptr);
-            server.push_meta(stream_key, std::move(stream_meta));
         }
     }
 
@@ -140,7 +104,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
     std::signal(SIGTERM, handle_sigint);
 
-    std::string cfg_path = "../../../configs/multi.yaml";
+    std::string cfg_path = "../../../configs/dual.yaml";
     if (argc >= 2) cfg_path = argv[1];
     else std::cerr << "Using default config: " << cfg_path << "\n";
 
@@ -164,7 +128,8 @@ int main(int argc, char** argv) {
     std::vector<std::thread> workers;
     workers.reserve(streams.size());
     for (const auto& s : streams) {
-        for (const auto& pr : output_profiles(s)) server.register_stream(s.id+"/"+pr.first);
+        server.register_stream(s.id + "/ui");
+        server.register_stream(s.id + "/inf");
         workers.emplace_back([&, s]() { run_src_worker(s, server); });
     }
 
