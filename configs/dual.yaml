@@ -7,9 +7,8 @@ streams:
     type: "rtsp"
 
     rtsp:
-      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/movie"
+      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
       tcp: true
-      fps: 25
       latency_ms: 1000
 
     outputs:
@@ -20,8 +19,8 @@ streams:
           fps: 10
           format: "BGR"
         ui:
-          width: 1280
-          height: 720
+          width: 960
+          height: 540
           fps: 10
           jpeg_quality: 75
 

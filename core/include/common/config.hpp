@@ -9,7 +9,7 @@ namespace ss {
         std::string device;
         int width;
         int height;
-        int fps;
+        //int fps;
         bool mjpg;
     };
 
@@ -22,7 +22,7 @@ namespace ss {
     struct RTSPConfig {
         std::string url;
         int latency_ms;
-        int fps;
+        //int fps;
         bool tcp;
     };
 

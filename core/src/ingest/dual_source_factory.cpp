@@ -52,9 +52,8 @@ namespace ss {
     static std::string make_queue(bool is_live) {
         if (is_live) {
             return "queue leaky=downstream max-size-buffers=1 max-size-bytes=0 max-size-time=0";
-        } else {
-            return "queue max-size-buffers=5";
         }
+        return "queue max-size-buffers=5";
     }
 
     static std::string common_split_tail(const std::string& sink_inf,

@@ -2,6 +2,7 @@ import streamlit as st
 import requests
 import math
 import time
+from datetime import datetime
 
 st.set_page_config(layout="wide")
 st.title("SecureSurveillance")
@@ -15,7 +16,6 @@ def get_streams(base_url: str, timeout=1.0):
     return r.json()  # ["file0_0/main", "file0_1/main"]
 
 def split_stream_id(s: str):
-    # "file0_0/main" -> ("file0_0", "main")
     if "/" not in s:
         return s, "main"
     src, channel = s.split("/", 1)
@@ -33,32 +33,23 @@ def safe_get_json(url: str, timeout: float):
     r.raise_for_status()
     return r.json()
 
+def now_str():
+    return datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
 # ----------------------------
 # Sidebar
 # ----------------------------
 st.sidebar.header("Backend")
 
-base_url = st.sidebar.text_input(
-    "Base URL",
-    value="http://localhost:8080"
-)
+base_url = st.sidebar.text_input("Base URL", value="http://localhost:8080")
 
-refresh_ms = st.sidebar.slider(
-    "Refresh interval (ms)", 200, 2000, 500, step=100
-)
+refresh_ms = st.sidebar.slider("Refresh interval (ms)", 200, 2000, 500, step=100)
+timeout_s  = st.sidebar.slider("HTTP timeout (s)", 0.2, 3.0, 0.7, step=0.1)
+cols       = st.sidebar.slider("Grid columns", 1, 4, 2)
 
-timeout_s = st.sidebar.slider(
-    "HTTP timeout (s)", 0.2, 3.0, 0.7, step=0.1
-)
-
-cols = st.sidebar.slider(
-    "Grid columns", 1, 4, 2
-)
-
-show_meta = st.sidebar.checkbox("Show metadata", True)
+show_meta  = st.sidebar.checkbox("Show metadata", True)
 show_links = st.sidebar.checkbox("Show stream links", False)
-
-run = st.sidebar.toggle("Run", value=True)
+run        = st.sidebar.toggle("Run", value=True)
 
 # ----------------------------
 # Load streams from backend
@@ -87,11 +78,12 @@ if not selected:
     st.stop()
 
 # ----------------------------
-# Auto refresh (Streamlit-safe)
+# Session state: last-known meta per stream
 # ----------------------------
-if run:
-    time.sleep(refresh_ms / 1000.0)
-    st.rerun()
+if "last_meta" not in st.session_state:
+    st.session_state.last_meta = {}      # stream_id -> dict
+if "last_meta_ts" not in st.session_state:
+    st.session_state.last_meta_ts = {}   # stream_id -> float (time.time())
 
 # ----------------------------
 # Render grid
@@ -113,15 +105,44 @@ for r in range(rows):
                 st.code(video_url)
                 st.code(meta_url)
 
-            # MJPEG stream
+            # Video (MJPEG)
             st.markdown(
                 f'<img src="{video_url}" style="width:100%; height:auto; border-radius:10px;" />',
                 unsafe_allow_html=True,
             )
 
+            # --- REAL-TIME META (updates in-place) ---
             if show_meta:
+                meta_box = st.empty()   # placeholder that updates smoothly
+                status   = st.empty()   # small status line
+
                 try:
                     meta = safe_get_json(meta_url, timeout_s)
-                    st.json(meta)
+                    st.session_state.last_meta[stream_id] = meta
+                    st.session_state.last_meta_ts[stream_id] = time.time()
+
+                    status.caption(f"meta: updated {now_str()}")
+                    meta_box.json(meta)
+
                 except Exception as e:
-                    st.warning(f"Meta unavailable: {e}")
+                    # Keep last known meta instead of flickering / disappearing
+                    last = st.session_state.last_meta.get(stream_id)
+                    ts   = st.session_state.last_meta_ts.get(stream_id)
+
+                    age = ""
+                    if ts is not None:
+                        age = f" (last OK {time.time() - ts:.1f}s ago)"
+
+                    status.caption(f"meta: error{age} — {type(e).__name__}: {e}")
+
+                    if last is not None:
+                        meta_box.json(last)
+                    else:
+                        meta_box.warning("No metadata received yet.")
+
+# ----------------------------
+# Auto refresh (after rendering)
+# ----------------------------
+if run:
+    time.sleep(refresh_ms / 1000.0)
+    st.rerun()

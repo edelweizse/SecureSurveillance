@@ -24,7 +24,7 @@ namespace ss {
         c.device = get_str(wc, "device", "/dev/video0");
         c.width = get_int(wc, "width", 1280);
         c.height = get_int(wc, "height", 720);
-        c.fps = get_int(wc, "fps", 30);
+        //c.fps = get_int(wc, "fps", 30);
         c.mjpg = get_bool(wc, "mjpg", get_bool(wc, "mjpeg", true));
         return c;
     }
@@ -42,7 +42,7 @@ namespace ss {
         RTSPConfig c;
         if (!rc) return c;
         c.url = get_str(rc, "url", "/");
-        c.fps = get_int(rc, "fps", 30);
+        //c.fps = get_int(rc, "fps", 30);
         c.latency_ms = get_int(rc, "latency_ms", 1000);
         c.tcp = get_bool(rc, "tcp", true);
         return c;

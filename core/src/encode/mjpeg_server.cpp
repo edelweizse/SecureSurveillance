@@ -95,7 +95,8 @@ namespace ss {
             }
 
             res.set_content(json, "application/json");
-            res.set_header("Cache-Control", "no-cache");
+            res.set_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            res.set_header("Pragma", "no-cache");
         });
 
         // /snapshot/<stream_key> -> last_jpeg once
