@@ -1,8 +1,31 @@
+#include <iomanip>
 #include <common/config.hpp>
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 
 namespace ss {
+    std::string json_escape(const std::string& str) {
+        std::ostringstream oss;
+        for (char c: str) {
+            switch (c) {
+                case '"': oss << "\\\""; break;
+                case '\\': oss << "\\\\"; break;
+                case '\b': oss << "\\b"; break;
+                case '\f': oss << "\\f"; break;
+                case '\n': oss << "\\n"; break;
+                case '\r': oss << "\\r"; break;
+                case '\t': oss << "\\t"; break;
+                default:
+                    if (c > 0 && c < 32) {
+                        oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
+                    } else {
+                        oss << c;
+                    }
+            }
+        }
+        return oss.str();
+    }
+
     static bool get_bool(
         const YAML::Node& n, const char* key, bool def) {
         return (n && n[key]) ? n[key].as<bool>() : def;
@@ -105,6 +128,10 @@ namespace ss {
             ic.id = get_str(s, "id", "unk");
             ic.type = get_str(s, "type", "unk");
 
+            if (ic.id.empty() || ic.id == "unk") {
+                throw std::runtime_error ("[Config] unk id!");
+            }
+
             ic.webcam = parse_webcam_config(s["webcam"]);
             ic.file = parse_file_config(s["file"]);
             ic.rtsp = parse_rtsp_config(s["rtsp"]);
@@ -115,6 +142,12 @@ namespace ss {
 
             if (ic.type == "rtsp" && ic.rtsp.url.empty()) {
                 throw std::runtime_error ("[Config] RTSP stream " + ic.id + " has empty URL!");
+            }
+            if (ic.type == "file" && ic.file.path.empty()) {
+                throw std::runtime_error ("[Config] File stream " + ic.id + " has empty [path]!");
+            }
+            if (ic.type == "webcam" && ic.webcam.device.empty()) {
+                throw std::runtime_error ("[Config] Webcam stream " + ic.id + " has empty device!");
             }
 
             cfg.streams.push_back(std::move(ic));

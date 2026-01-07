@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 namespace ss {
+    class WebRTCManager;
+
     class MJPEGServer {
     public:
         MJPEGServer(std::string host, int port);
@@ -27,13 +29,15 @@ namespace ss {
         // optionally push JSON metadata
         void push_meta(const std::string& stream_key, std::string json);
 
+        void send_webrtc(ss::WebRTCManager* w);
+
         void register_stream(const std::string& stream_key);
 
         std::vector<std::string> list_streams() const;
 
     private:
         struct Impl;
-        Impl* impl_ = nullptr;
+        std::unique_ptr<Impl> impl_;
 
         struct StreamState {
             mutable std::mutex mtx;
@@ -57,5 +61,8 @@ namespace ss {
 
         mutable std::mutex streams_mtx_;
         mutable std::unordered_map<std::string, std::shared_ptr<StreamState>> streams_;
+
+        mutable std::mutex webrtx_mtx_;
+        ss::WebRTCManager* webrtc_ = nullptr;
     };
 }

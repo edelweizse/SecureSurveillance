@@ -71,4 +71,6 @@ namespace ss {
     };
 
     AppConfig load_config_yaml(const std::string& path);
+
+    std::string json_escape(const std::string& str);
 }

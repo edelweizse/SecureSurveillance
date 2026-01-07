@@ -1,23 +1,23 @@
 #pragma once
 #include <string>
 #include <memory>
-#include <vector>
 #include <opencv2/core.hpp>
 
 struct _GstElement;
 using GstElement = _GstElement;
 
 namespace ss {
-    struct FramePacket {
-        cv::Mat bgr;
-        int64_t pts_ns = 0;
-        int64_t frame_id = 0;
-    };
+    struct FrameBundle {
+        std::string stream_id;
 
-    struct JpegPacket {
-        std::shared_ptr<const std::vector<uint8_t>> jpeg;
-        int64_t pts_ns = 0;
         int64_t frame_id = 0;
+        int64_t pts_ns = 0;
+
+        std::shared_ptr<const cv::Mat> inf_bgr;
+        std::shared_ptr<cv::Mat> ui_bgr;
+
+        float sx = 1.f;  // uix = infx * sx
+        float sy = 1.f;  // uiy = infy * sy
     };
 
     class GstDualSource {
@@ -30,15 +30,16 @@ namespace ss {
         bool start();
         void stop();
 
-        bool read_inference(FramePacket& out, int timeout_ms);
-        bool read_ui(JpegPacket& out, int timeout_ms);
+        bool read_frame(std::shared_ptr<FrameBundle>& out, int timeout_ms);
 
         const std::string& id() const { return id_; };
 
         ~GstDualSource();
     private:
-        bool pull_raw_bgr_(GstElement* sink, FramePacket& out, int timeout_ms);
-        bool pull_jpeg_(GstElement* sink, JpegPacket& out, int timeout_ms);
+        bool pull_frame_(GstElement* sink,
+                           cv::Mat& out,
+                           int64_t& pts_ns,
+                           int timeout_ms);
 
         std::string pipeline_str_;
         std::string id_;
@@ -49,9 +50,6 @@ namespace ss {
         GstElement* sink_inf_ = nullptr;
         GstElement* sink_ui_ = nullptr;
 
-        int64_t inf_frame_id_ = 0;
-        int64_t ui_frame_id_ = 0;
-
-        static bool gst_inited_;
+        int64_t frame_id_ = 0;
     };
 }

@@ -9,7 +9,7 @@
 #include <utility>
 
 namespace ss {
-    bool GstDualSource::gst_inited_ = false;
+    constexpr int64_t PTS_TOLERANCE_NS = 1000000;
 
     GstDualSource::GstDualSource(std::string pipeline,
                                  std::string id,
@@ -65,8 +65,11 @@ namespace ss {
 
 
 
-    bool GstDualSource::pull_raw_bgr_(GstElement* sink, FramePacket& out, int timeout_ms) {
-        GstSample* sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), timeout_ms * GST_MSECOND);
+    bool GstDualSource::pull_frame_(GstElement* sink,
+                                      cv::Mat& out,
+                                      int64_t& pts_ns,
+                                      int timeout_ms) {
+        GstSample* sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink),timeout_ms * GST_MSECOND);
         if (!sample) return false;
 
         GstBuffer* buffer = gst_sample_get_buffer(sample);
@@ -110,8 +113,10 @@ namespace ss {
         }
 
         cv::Mat tmp(height, width, CV_8UC3, map.data, stride);
-        out.bgr = tmp.clone();
-        out.pts_ns = (buffer->pts == GST_CLOCK_TIME_NONE) ? 0 : static_cast<int64_t>(buffer->pts);
+        out = tmp.clone();
+        pts_ns = (buffer->pts == GST_CLOCK_TIME_NONE)
+                   ? 0
+                   : static_cast<int64_t>(buffer->pts);
 
         gst_buffer_unmap(buffer, &map);
         gst_sample_unref(sample);
@@ -119,58 +124,46 @@ namespace ss {
         return true;
     }
 
-    bool GstDualSource::pull_jpeg_(GstElement* sink, JpegPacket& out, int timeout_ms) {
-        GstSample* sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), GST_MSECOND * timeout_ms);
-        if (!sample) return false;
-
-        GstBuffer* buffer = gst_sample_get_buffer(sample);
-        if (!buffer) {
-            gst_sample_unref(sample);
-            // std::cerr << "[GStreamer](pull_jpeg) Failed to get buffer.\n";
+    bool GstDualSource::read_frame(std::shared_ptr<FrameBundle>& out, int timeout_ms) {
+        if (!sink_ui_ || !sink_inf_) {
+            std::cerr << "[GStreamer](read_ui) Failed to get sink_ui/sink_inf instance.\n";
+            return false;
+        }
+        cv::Mat inf, ui;
+        int64_t pts_inf = 0, pts_ui = 0;
+        if (!pull_frame_(sink_inf_, inf, pts_inf, timeout_ms)) {
+            // std::cerr << "[GStreamer](read_frame) Failed to pull from inf sink.\n)";
             return false;
         }
 
-        GstMapInfo map;
-        if (!gst_buffer_map(buffer, &map, GST_MAP_READ) || !map.data || map.size == 0) {
-            gst_sample_unref(sample);
-            // std::cerr << "[GStreamer](pull_jpeg) Failed to get buffer map.\n";
+        if (!pull_frame_(sink_ui_, ui, pts_ui, timeout_ms)) {
+            // std::cerr << "[GStreamer](read_frame) Failed to pull from ui sink.\n)";
+            return false;
+        }
+        int64_t pts_diff = std::abs(pts_inf - pts_ui);
+        if (pts_diff > PTS_TOLERANCE_NS) {
+            std::cerr << "[GStreamer](read_frame) PTS Mismatch is more tolerance";
             return false;
         }
 
-        auto vec = std::make_shared<std::vector<uint8_t>>();
-        vec->assign(static_cast<const uint8_t *>(map.data),
-                    static_cast<const uint8_t *>(map.data) + map.size);
-        out.jpeg = std::move(vec);
-        out.pts_ns = (buffer->pts == GST_CLOCK_TIME_NONE) ? 0 : static_cast<int64_t>(buffer->pts);
+        auto bundle = std::make_shared<FrameBundle>();
+        bundle->stream_id = id_;
+        bundle->frame_id = frame_id_++;
+        bundle->pts_ns = pts_inf;
 
-        gst_buffer_unmap(buffer, &map);
-        gst_sample_unref(sample);
-        return true;
-    }
+        bundle->inf_bgr = std::make_shared<const cv::Mat>(std::move(inf));
+        bundle->ui_bgr = std::make_shared<cv::Mat>(std::move(ui));
 
-    bool GstDualSource::read_inference(FramePacket& out, int timeout_ms) {
-        if (!sink_inf_) {
-            // std::cerr << "[GStreamer](read_inference) Failed to get sink_inf_ instance.\n";
-            return false;
+        if (bundle->inf_bgr->cols > 0 && bundle->inf_bgr->rows > 0) {
+            bundle->sx = float(bundle->ui_bgr->cols) / float(bundle->inf_bgr->cols);
+            bundle->sy = float(bundle->ui_bgr->rows) / float(bundle->inf_bgr->rows);
+        } else {
+            std::cerr << "[GStreamer](read_frame) Warning: infr streams has zero dims";
+            bundle->sx = 1.0f;
+            bundle->sy = 1.0f;
         }
-        if (!pull_raw_bgr_(sink_inf_, out, timeout_ms)) {
-            // std::cerr << "[GStreamer](read_inference) Failed to pull raw inference.\n)";
-            return false;
-        }
-        out.frame_id = inf_frame_id_++;
-        return true;
-    }
 
-    bool GstDualSource::read_ui(JpegPacket& out, int timeout_ms) {
-        if (!sink_ui_) {
-            // std::cerr << "[GStreamer](read_ui) Failed to get sink_ui instance.\n";
-            return false;
-        }
-        if (!pull_jpeg_(sink_ui_, out, timeout_ms)) {
-            // std::cerr << "[GStreamer](read_ui) Failed to pull jpeg.\n)";
-            return false;
-        }
-        out.frame_id = ui_frame_id_++;
+        out = std::move(bundle);
         return true;
     }
 
