@@ -1,11 +1,14 @@
 cmake_minimum_required(VERSION 3.16)
 
-add_library(ss_core)
+add_library(ss_core
+        src/encode/webrtc_manager.cpp)
 
 # Headers
 file(GLOB_RECURSE SS_CORE_HEADERS
         CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/*.hxx
 )
 
 # Sources
@@ -40,11 +43,15 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED IMPORTED_TARGET gstreamer-1.0)
 pkg_check_modules(GST_APP REQUIRED IMPORTED_TARGET gstreamer-app-1.0)
 pkg_check_modules(GST_VIDEO REQUIRED IMPORTED_TARGET gstreamer-video-1.0)
+pkg_check_modules(GST_WEBRTC REQUIRED IMPORTED_TARGET gstreamer-webrtc-1.0)
+pkg_check_modules(GST_SDP REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0)
 
 target_link_libraries(ss_core PRIVATE
         PkgConfig::GST
         PkgConfig::GST_APP
         PkgConfig::GST_VIDEO
+        PkgConfig::GST_WEBRTC
+        PkgConfig::GST_SDP
 )
 target_compile_definitions(ss_core PUBLIC SS_HAS_GST=1)
 

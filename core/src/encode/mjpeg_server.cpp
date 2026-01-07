@@ -3,19 +3,20 @@
 #include <sstream>
 #include <httplib.h>
 
+#include "encode/webrtc_manager.hpp"
+
 namespace ss {
     struct MJPEGServer:: Impl {
         httplib::Server svr;
     };
 
     MJPEGServer::MJPEGServer(std::string host, int port)
-        : impl_(new Impl()),
+        : impl_(std::make_unique<Impl>()),
           host_(std::move(host)),
           port_(port) {}
 
     MJPEGServer::~MJPEGServer() {
         stop();
-        delete impl_;
     }
 
     std::shared_ptr<MJPEGServer::StreamState> MJPEGServer::get_or_create_(const std::string& key) const {
@@ -62,9 +63,84 @@ namespace ss {
         (void)get_or_create_(stream_key);
     }
 
+    void MJPEGServer::send_webrtc(ss::WebRTCManager* w) {
+        std::lock_guard lk(webrtx_mtx_);
+        if (running_) {
+            std::cerr << "[MJPEG] Warning: send_webrtc called after start().";
+        }
+        webrtc_ = w;
+    }
+
     bool MJPEGServer::start() {
         if (running_) return true;
         running_ = true;
+
+        impl_->svr.Post(R"(/webrtc/offer/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+            ss::WebRTCManager* webrtc = nullptr;
+            {
+                std::lock_guard lk(webrtx_mtx_);
+                webrtc = webrtc_;
+            }
+            if (!webrtc) {
+                res.status = 503;
+                res.set_content("webrtc disabled", "text/plain");
+            }
+            std::string ans = webrtc->handle_offer(req.matches[1], req.body);
+            if (ans.empty()) {
+                res.status = 500;
+                res.set_content("empty answer", "text/plain");
+                return;
+            }
+            res.set_content(ans, "application/sdp");
+        });
+
+        impl_->svr.Get(R"(/webrtc/(.+))", [this](const httplib::Request& req, httplib::Response& res) {
+            if (req.matches.size() < 2) { res.status = 400; return; }
+            const std::string stream_id = req.matches[1];
+            std::string html = R"HTML(
+                <!doctype html>
+                    <html>
+                    <head><meta charset="utf-8"><title>WebRTC Test</title></head>
+                    <body>
+                    <h3>WebRTC stream: )HTML" + stream_id + R"HTML(</h3>
+                    <video id="v" autoplay playsinline controls style="width:90%;max-width:1100px;"></video>
+                    <pre id="log"></pre>
+                    <script>
+                    const log = (s)=>{ document.getElementById("log").textContent += s + "\\n"; };
+
+                    (async () => {
+                      const pc = new RTCPeerConnection({ iceServers: [] }); // localhost test
+
+                      // create client-side datachannel so server gets on-data-channel
+                      const dc = pc.createDataChannel("meta");
+                      dc.onmessage = (m)=>log("META: " + m.data);
+
+                      pc.ontrack = (e) => {
+                        document.getElementById("v").srcObject = e.streams[0];
+                        log("ontrack: video connected");
+                      };
+
+                      const offer = await pc.createOffer({ offerToReceiveVideo: true });
+                      await pc.setLocalDescription(offer);
+
+                      const r = await fetch("/webrtc/offer/)HTML" + stream_id + R"HTML(", {
+                        method: "POST",
+                        headers: {"Content-Type":"application/sdp"},
+                        body: offer.sdp
+                      });
+
+                      if (!r.ok) { log("offer failed: " + r.status); return; }
+                      const answerSdp = await r.text();
+                      await pc.setRemoteDescription({ type: "answer", sdp: answerSdp });
+                      log("remote description set");
+                    })();
+                    </script>
+                    </body>
+                    </html>
+            )HTML";
+            res.set_content(html, "text/html; charset=utf-8");
+            res.set_header("Cache-Control", "no-cache");
+        });
 
         // /streams -> JSON list of stream keys
         impl_->svr.Get("/streams", [this](const httplib::Request&, httplib::Response& res) {

@@ -10,9 +10,12 @@
 #include <vector>
 #include <atomic>
 #include <csignal>
+#include <chrono>
+#include <thread>
 
-#include "ingest/dual_source_factory.hpp"
-#include "ingest/gst_dual_source.hpp"
+#include <ingest/dual_source_factory.hpp>
+#include <ingest/gst_dual_source.hpp>
+#include <encode/webrtc_manager.hpp>
 
 static std::atomic<bool> g_running(true);
 static void handle_sigint(int) { g_running = false; }
@@ -48,7 +51,7 @@ std::vector<ss::IngestConfig> expand_replicas(const std::vector<ss::IngestConfig
     return out;
 }
 
-static void run_src_worker(const ss::IngestConfig& cfg, ss::MJPEGServer& server) {
+static void run_src_worker(const ss::IngestConfig& cfg, ss::MJPEGServer& server, ss::WebRTCManager& webrtc) {
     std::unique_ptr<ss::GstDualSource> src;
     try {
         src = ss::make_dual_source(cfg);
@@ -65,37 +68,35 @@ static void run_src_worker(const ss::IngestConfig& cfg, ss::MJPEGServer& server)
     const std::string inf_key = cfg.id + "/inf";
     const std::string ui_key = cfg.id + "/ui";
 
-    ss::FramePacket fp;
-    ss::JpegPacket jp;
-
     while (g_running) {
-        if (src->read_ui(jp, 100)) {
-            server.push_jpeg(ui_key, jp.jpeg);
+        std::shared_ptr<ss::FrameBundle> fb;
 
-            std::string meta =
-                "{"
-                "\"stream_id\":\"" + cfg.id + "\","
-                "\"profile\":\"ui\","
-                "\"frame_id\":" + std::to_string(jp.frame_id) + ","
-                "\"pts_ns\":" + std::to_string(jp.pts_ns) +
-                "}";
-            server.push_meta(ui_key, std::move(meta));
+        if (!src->read_frame(fb, 100)) continue;
+        {
+            std::vector<uint8_t> enc;
+            cv::imencode(".jpg", *fb->ui_bgr, enc, {cv::IMWRITE_JPEG_QUALITY, 75});
+            server.push_jpeg(ui_key, std::make_shared<const std::vector<uint8_t>>(std::move(enc)));
         }
-        if (src->read_inference(fp, 100)) {
-            std::string meta =
-                "{"
-                "\"stream_id\":\"" + cfg.id + "\","
-                "\"profile\":\"inf\","
-                "\"frame_id\":" + std::to_string(fp.frame_id) + ","
-                "\"pts_ns\":" + std::to_string(fp.pts_ns) + ","
-                "\"w\":" + std::to_string(fp.bgr.cols) + ","
-                "\"h\":" + std::to_string(fp.bgr.rows) +
-                "}";
-            server.push_meta(inf_key, std::move(meta));
 
-        }
+        webrtc.push_frame(fb->stream_id, *fb->ui_bgr, fb->pts_ns);
+        std::string meta =
+            "{"
+            "\"stream_id\":\"" + ss::json_escape(fb->stream_id) + "\","
+            "\"frame_id\":" + std::to_string(fb->frame_id) + ","
+            "\"pts_ns\":" + std::to_string(fb->pts_ns) + ","
+            "\"ui_w\":" + std::to_string(fb->ui_bgr->cols) + ","
+            "\"ui_h\":" + std::to_string(fb->ui_bgr->rows) + ","
+            "\"inf_w\":" + std::to_string(fb->inf_bgr->cols) + ","
+            "\"inf_h\":" + std::to_string(fb->inf_bgr->rows) + ","
+            "\"sx\":" + std::to_string(fb->sx) + ","
+            "\"sy\":" + std::to_string(fb->sy) +
+            "}";
+
+        server.push_meta(ui_key, meta);
+        server.push_meta(inf_key, meta);
+        webrtc.push_meta(fb->stream_id, meta);
+
     }
-
     src->stop();
     std::cerr << "[worker:" << cfg.id << "] Stopped.\n";
 }
@@ -122,7 +123,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    ss::WebRTCManager webrtc;
     ss::MJPEGServer server(cfg.server.url, cfg.server.port);
+
+    server.send_webrtc(&webrtc);
     server.start();
 
     std::vector<std::thread> workers;
@@ -130,7 +134,11 @@ int main(int argc, char** argv) {
     for (const auto& s : streams) {
         server.register_stream(s.id + "/ui");
         server.register_stream(s.id + "/inf");
-        workers.emplace_back([&, s]() { run_src_worker(s, server); });
+        if (!webrtc.add_stream(s.id, s.outputs.profiles.at("ui"))) {
+            std::cerr << "[main] failed to add rtc stream: " << s.id + "\n";
+            continue;
+        };
+        workers.emplace_back([&server, &webrtc, s]() { run_src_worker(s, server, webrtc); });
     }
 
     while (g_running) {
