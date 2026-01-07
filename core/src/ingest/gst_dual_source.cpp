@@ -9,8 +9,6 @@
 #include <utility>
 
 namespace ss {
-    bool GstDualSource::gst_inited_ = false;
-
     GstDualSource::GstDualSource(std::string pipeline,
                                  std::string id,
                                  std::string sink_inf_name,
@@ -59,13 +57,12 @@ namespace ss {
             stop();
             return false;
         }
-
         return true;
     }
 
 
 
-    bool GstDualSource::pull_raw_bgr_(GstElement* sink, FramePacket& out, int timeout_ms) {
+    bool GstDualSource::pull_bgr_(GstElement* sink, FramePacket& out, int timeout_ms) {
         GstSample* sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), timeout_ms * GST_MSECOND);
         if (!sample) return false;
 
@@ -119,58 +116,33 @@ namespace ss {
         return true;
     }
 
-    bool GstDualSource::pull_jpeg_(GstElement* sink, JpegPacket& out, int timeout_ms) {
-        GstSample* sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), GST_MSECOND * timeout_ms);
-        if (!sample) return false;
-
-        GstBuffer* buffer = gst_sample_get_buffer(sample);
-        if (!buffer) {
-            gst_sample_unref(sample);
-            // std::cerr << "[GStreamer](pull_jpeg) Failed to get buffer.\n";
+    bool GstDualSource::read(DualFramePacket& out, int timeout_ms) {
+        FramePacket inf_pkt;
+        if (!sink_inf_ || !pull_bgr_(sink_inf_, inf_pkt, timeout_ms)) {
+            //std::cerr << "[GStreamer](read_ui) Failed to get sink_ui instance.\n";
             return false;
         }
 
-        GstMapInfo map;
-        if (!gst_buffer_map(buffer, &map, GST_MAP_READ) || !map.data || map.size == 0) {
-            gst_sample_unref(sample);
-            // std::cerr << "[GStreamer](pull_jpeg) Failed to get buffer map.\n";
+        FramePacket ui_pkt;
+        if (!sink_ui_ || !pull_bgr_(sink_ui_, ui_pkt, timeout_ms)) {
+            //std::cerr << "[GStreamer](read_ui) Failed to get sink_ui instance.\n";
             return false;
         }
 
-        auto vec = std::make_shared<std::vector<uint8_t>>();
-        vec->assign(static_cast<const uint8_t *>(map.data),
-                    static_cast<const uint8_t *>(map.data) + map.size);
-        out.jpeg = std::move(vec);
-        out.pts_ns = (buffer->pts == GST_CLOCK_TIME_NONE) ? 0 : static_cast<int64_t>(buffer->pts);
-
-        gst_buffer_unmap(buffer, &map);
-        gst_sample_unref(sample);
-        return true;
-    }
-
-    bool GstDualSource::read_inference(FramePacket& out, int timeout_ms) {
-        if (!sink_inf_) {
-            // std::cerr << "[GStreamer](read_inference) Failed to get sink_inf_ instance.\n";
-            return false;
+        if (scale_x_ == 0.0f && inf_pkt.bgr.cols > 0 && inf_pkt.bgr.rows > 0) {
+            scale_x_ = static_cast<float>(ui_pkt.bgr.cols) / static_cast<float>(inf_pkt.bgr.cols);
+            scale_y_ = static_cast<float>(ui_pkt.bgr.rows) / static_cast<float>(inf_pkt.bgr.rows);
+            std::cout << "[GStreamer](read) scale_x: " << scale_x_ << " scale_y: " << scale_y_ << "\n";
         }
-        if (!pull_raw_bgr_(sink_inf_, out, timeout_ms)) {
-            // std::cerr << "[GStreamer](read_inference) Failed to pull raw inference.\n)";
-            return false;
-        }
+
+        out.inf_frame = inf_pkt.bgr;
+        out.ui_frame = ui_pkt.bgr;
+
+        out.pts_ns = inf_pkt.pts_ns;
         out.frame_id = inf_frame_id_++;
-        return true;
-    }
 
-    bool GstDualSource::read_ui(JpegPacket& out, int timeout_ms) {
-        if (!sink_ui_) {
-            // std::cerr << "[GStreamer](read_ui) Failed to get sink_ui instance.\n";
-            return false;
-        }
-        if (!pull_jpeg_(sink_ui_, out, timeout_ms)) {
-            // std::cerr << "[GStreamer](read_ui) Failed to pull jpeg.\n)";
-            return false;
-        }
-        out.frame_id = ui_frame_id_++;
+        out.scale_x = scale_x_;
+        out.scale_y = scale_y_;
         return true;
     }
 

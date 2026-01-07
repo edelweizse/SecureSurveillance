@@ -14,10 +14,15 @@ namespace ss {
         int64_t frame_id = 0;
     };
 
-    struct JpegPacket {
-        std::shared_ptr<const std::vector<uint8_t>> jpeg;
+    struct DualFramePacket {
+        cv::Mat inf_frame;
+        cv::Mat ui_frame;
+
         int64_t pts_ns = 0;
         int64_t frame_id = 0;
+
+        float scale_x = 0.0f;
+        float scale_y = 0.0f;
     };
 
     class GstDualSource {
@@ -30,15 +35,13 @@ namespace ss {
         bool start();
         void stop();
 
-        bool read_inference(FramePacket& out, int timeout_ms);
-        bool read_ui(JpegPacket& out, int timeout_ms);
+        bool read(DualFramePacket& out, int timeout_ms);
 
         const std::string& id() const { return id_; };
 
         ~GstDualSource();
     private:
-        bool pull_raw_bgr_(GstElement* sink, FramePacket& out, int timeout_ms);
-        bool pull_jpeg_(GstElement* sink, JpegPacket& out, int timeout_ms);
+        bool pull_bgr_(GstElement* sink, FramePacket& out, int timeout_ms);
 
         std::string pipeline_str_;
         std::string id_;
@@ -52,6 +55,7 @@ namespace ss {
         int64_t inf_frame_id_ = 0;
         int64_t ui_frame_id_ = 0;
 
-        static bool gst_inited_;
+        float scale_x_ = 1.0f;
+        float scale_y_ = 1.0f;
     };
 }

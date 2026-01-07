@@ -33,17 +33,9 @@ namespace ss {
         return it->second;
     }
 
-    static std::string caps_raw_bgr(const OutputConfig& o) {
+    static std::string caps(const OutputConfig& o) {
         std::ostringstream ss;
         ss << "video/x-raw,format=" << (o.format.empty() ? "BGR" : o.format);
-        if (o.width > 0 && o.height > 0) ss << ",width=" << o.width << ",height=" << o.height;
-        if (o.fps > 0) ss << ",framerate=" << o.fps << "/1";
-        return ss.str();
-    }
-
-    static std::string caps_rawi420(const OutputConfig& o) {
-        std::ostringstream ss;
-        ss << "video/x-raw,format=I420";
         if (o.width > 0 && o.height > 0) ss << ",width=" << o.width << ",height=" << o.height;
         if (o.fps > 0) ss << ",framerate=" << o.fps << "/1";
         return ss.str();
@@ -71,16 +63,15 @@ namespace ss {
             << " ! videorate "
             << " ! videoscale "
             << " ! videoconvert "
-            << " ! " << caps_raw_bgr(inf)
+            << " ! " << caps(inf)
             << " ! appsink name=" << sink_inf << " max-buffers=1 drop=true " << sync_str << " "
 
             << "t. ! " << queue_str
             << " ! videorate "
             << " ! videoscale "
             << " ! videoconvert "
-            << " ! " << caps_rawi420(ui)
-            << " ! jpegenc quality=" << ui.jpeg_quality
-            << " ! image/jpeg ! appsink name=" << sink_ui << " max-buffers=1 drop=true " << sync_str << " ";
+            << " ! " << caps(ui)
+            << " ! appsink name=" << sink_ui << " max-buffers=1 drop=true " << sync_str << " ";
         return ss.str();
     }
 

@@ -10,6 +10,8 @@
 #include <memory>
 #include <unordered_map>
 
+#include <opencv2/core.hpp>
+
 namespace ss {
     class MJPEGServer {
     public:
@@ -23,6 +25,10 @@ namespace ss {
         // push latest jpeg frame in bytes
         void push_jpeg(const std::string& stream_key,
                        std::shared_ptr<const std::vector<uint8_t>> jpeg);
+
+        void push_jpeg(const std::string& stream_key,
+                      const cv::Mat& frame,
+                      int quality);
 
         // optionally push JSON metadata
         void push_meta(const std::string& stream_key, std::string json);

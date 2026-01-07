@@ -65,34 +65,33 @@ static void run_src_worker(const ss::IngestConfig& cfg, ss::MJPEGServer& server)
     const std::string inf_key = cfg.id + "/inf";
     const std::string ui_key = cfg.id + "/ui";
 
-    ss::FramePacket fp;
-    ss::JpegPacket jp;
+    ss::DualFramePacket dp;
 
     while (g_running) {
-        if (src->read_ui(jp, 100)) {
-            server.push_jpeg(ui_key, jp.jpeg);
+        if (src->read(dp, 100)) {
+            server.push_jpeg(ui_key, dp.ui_frame, 75);
 
-            std::string meta =
-                "{"
-                "\"stream_id\":\"" + cfg.id + "\","
-                "\"profile\":\"ui\","
-                "\"frame_id\":" + std::to_string(jp.frame_id) + ","
-                "\"pts_ns\":" + std::to_string(jp.pts_ns) +
-                "}";
-            server.push_meta(ui_key, std::move(meta));
-        }
-        if (src->read_inference(fp, 100)) {
-            std::string meta =
+            std::string ui_meta =
                 "{"
                 "\"stream_id\":\"" + cfg.id + "\","
                 "\"profile\":\"inf\","
-                "\"frame_id\":" + std::to_string(fp.frame_id) + ","
-                "\"pts_ns\":" + std::to_string(fp.pts_ns) + ","
-                "\"w\":" + std::to_string(fp.bgr.cols) + ","
-                "\"h\":" + std::to_string(fp.bgr.rows) +
+                "\"frame_id\":" + std::to_string(dp.frame_id) + ","
+                "\"pts_ns\":" + std::to_string(dp.pts_ns) + ","
+                "\"w\":" + std::to_string(dp.ui_frame.cols) + ","
+                "\"h\":" + std::to_string(dp.ui_frame.rows) +
                 "}";
-            server.push_meta(inf_key, std::move(meta));
+            server.push_meta(ui_key, std::move(ui_meta));
 
+            std::string inf_meta =
+                "{"
+                "\"stream_id\":\"" + cfg.id + "\","
+                "\"profile\":\"inf\","
+                "\"frame_id\":" + std::to_string(dp.frame_id) + ","
+                "\"pts_ns\":" + std::to_string(dp.pts_ns) + ","
+                "\"w\":" + std::to_string(dp.inf_frame.cols) + ","
+                "\"h\":" + std::to_string(dp.inf_frame.rows) +
+                "}";
+            server.push_meta(inf_key, std::move(inf_meta));
         }
     }
 

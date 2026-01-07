@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <httplib.h>
+#include <opencv2/imgcodecs.hpp>
 
 namespace ss {
     struct MJPEGServer:: Impl {
@@ -19,14 +20,14 @@ namespace ss {
     }
 
     std::shared_ptr<MJPEGServer::StreamState> MJPEGServer::get_or_create_(const std::string& key) const {
-        std::lock_guard<std::mutex> lk(streams_mtx_);
+        std::lock_guard lk(streams_mtx_);
         auto& p = streams_[key];
         if (!p) p = std::make_shared<StreamState>();
         return p;
     }
 
     std::shared_ptr<MJPEGServer::StreamState> MJPEGServer::get_(const std::string& key) const {
-        std::lock_guard<std::mutex> lk(streams_mtx_);
+        std::lock_guard lk(streams_mtx_);
         auto it = streams_.find(key);
         if (it == streams_.end()) return nullptr;
         return it->second;
@@ -36,11 +37,22 @@ namespace ss {
                                 std::shared_ptr<const std::vector<uint8_t>> jpeg) {
         auto st = get_or_create_(stream_key);
         {
-            std::lock_guard<std::mutex> lk(st->mtx);
+            std::lock_guard lk(st->mtx);
             st->last_jpeg = std::move(jpeg);
             ++st->seq;
         }
         st->cv.notify_all();
+    }
+
+    void MJPEGServer::push_jpeg(const std::string& stream_key, const cv::Mat& frame, int quality) {
+        if (frame.empty() || frame.type() != CV_8UC3) { return; }
+        std::vector<uint8_t> tmp;
+        std::vector params = {cv::IMWRITE_JPEG_QUALITY, quality};
+
+        if (!cv::imencode(".jpg", frame, tmp, params)) return;
+
+        auto bytes = std::make_shared<std::vector<uint8_t>>(std::move(tmp));
+        push_jpeg(stream_key, bytes);
     }
 
     void MJPEGServer::push_meta(const std::string& stream_key, std::string json) {
@@ -50,7 +62,7 @@ namespace ss {
     }
 
     std::vector<std::string> MJPEGServer::list_streams() const {
-        std::lock_guard<std::mutex> lk(streams_mtx_);
+        std::lock_guard lk(streams_mtx_);
         std::vector<std::string> out;
         out.reserve(streams_.size());
         for (const auto& kv : streams_) out.push_back(kv.first);
@@ -137,7 +149,7 @@ namespace ss {
                 [this, st, boundary](size_t /*offset*/, httplib::DataSink& sink) {
                     uint64_t last_sent = 0;
                     {
-                        std::unique_lock<std::mutex> lk(st->mtx);
+                        std::unique_lock lk(st->mtx);
                         st->cv.wait(lk, [&] { return st->seq != 0 || !running_; });
                         if (!running_) { sink.done(); return true; }
                         last_sent = st->seq;;
@@ -148,7 +160,7 @@ namespace ss {
                         uint64_t seq_local = 0;
 
                         {
-                            std::unique_lock<std::mutex> lk(st->mtx);
+                            std::unique_lock lk(st->mtx);
                             st->cv.wait(lk, [&] { return st->seq != last_sent || !running_; });
                             if (!running_) break;
 
@@ -193,7 +205,7 @@ namespace ss {
         running_ = false;
 
         {
-            std::lock_guard<std::mutex> lk(streams_mtx_);
+            std::lock_guard lk(streams_mtx_);
             for (auto& kv : streams_) {
                 kv.second->cv.notify_all();
             }
