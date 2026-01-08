@@ -11,8 +11,7 @@
 #include <atomic>
 #include <csignal>
 
-#include "ingest/dual_source_factory.hpp"
-#include "ingest/gst_dual_source.hpp"
+#include "pipeline/runtime.hpp"
 
 static std::atomic<bool> g_running(true);
 static void handle_sigint(int) { g_running = false; }
@@ -47,58 +46,6 @@ std::vector<ss::IngestConfig> expand_replicas(const std::vector<ss::IngestConfig
     }
     return out;
 }
-
-static void run_src_worker(const ss::IngestConfig& cfg, ss::MJPEGServer& server) {
-    std::unique_ptr<ss::GstDualSource> src;
-    try {
-        src = ss::make_dual_source(cfg);
-    } catch (const std::exception& e) {
-        std::cerr << "[worker:" << cfg.id << "] Failed to create dual source: " << e.what() << "\n";
-        return;
-    }
-
-    if (!src->start()) {
-        std::cerr << "[worker:" << cfg.id << "] Failed to start dual source.\n";
-        return;
-    }
-
-    const std::string inf_key = cfg.id + "/inf";
-    const std::string ui_key = cfg.id + "/ui";
-
-    ss::DualFramePacket dp;
-
-    while (g_running) {
-        if (src->read(dp, 100)) {
-            server.push_jpeg(ui_key, dp.ui_frame, 75);
-
-            std::string ui_meta =
-                "{"
-                "\"stream_id\":\"" + cfg.id + "\","
-                "\"profile\":\"inf\","
-                "\"frame_id\":" + std::to_string(dp.frame_id) + ","
-                "\"pts_ns\":" + std::to_string(dp.pts_ns) + ","
-                "\"w\":" + std::to_string(dp.ui_frame.cols) + ","
-                "\"h\":" + std::to_string(dp.ui_frame.rows) +
-                "}";
-            server.push_meta(ui_key, std::move(ui_meta));
-
-            std::string inf_meta =
-                "{"
-                "\"stream_id\":\"" + cfg.id + "\","
-                "\"profile\":\"inf\","
-                "\"frame_id\":" + std::to_string(dp.frame_id) + ","
-                "\"pts_ns\":" + std::to_string(dp.pts_ns) + ","
-                "\"w\":" + std::to_string(dp.inf_frame.cols) + ","
-                "\"h\":" + std::to_string(dp.inf_frame.rows) +
-                "}";
-            server.push_meta(inf_key, std::move(inf_meta));
-        }
-    }
-
-    src->stop();
-    std::cerr << "[worker:" << cfg.id << "] Stopped.\n";
-}
-
 int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
     std::signal(SIGTERM, handle_sigint);
@@ -124,23 +71,23 @@ int main(int argc, char** argv) {
     ss::MJPEGServer server(cfg.server.url, cfg.server.port);
     server.start();
 
-    std::vector<std::thread> workers;
-    workers.reserve(streams.size());
     for (const auto& s : streams) {
         server.register_stream(s.id + "/ui");
         server.register_stream(s.id + "/inf");
-        workers.emplace_back([&, s]() { run_src_worker(s, server); });
     }
 
-    while (g_running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    }
+    ss::PipelineRuntime::Options opt;
+    opt.jpeg_quality = 75;
+    opt.inf_workers = 4;
+
+    ss::PipelineRuntime rt(server, streams, opt);
+    rt.start();
+
+    while (g_running) std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     std::cerr << "Shutting down...\n";
-    for (auto& t : workers) {
-        if (t.joinable()) t.join();
-    }
-    server.stop();
 
+    rt.stop();
+    server.stop();
     return 0;
 }
