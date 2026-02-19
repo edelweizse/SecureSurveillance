@@ -1,0 +1,58 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+
+streams:
+  - id: "rtsp0"
+    type: "rtsp"
+
+    rtsp:
+      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
+      tcp: true
+      fps: 25
+      latency_ms: 3000
+
+    outputs:
+      fps: 25
+      profiles:
+        inference:
+          width: 640
+          height: 480
+          keep_aspect: true
+          interp: "linear"
+          format: "BGR"
+        ui:
+          width: 640
+          height: 480
+          keep_aspect: true
+          interp: "linear"
+          jpeg_quality: 75
+
+    replicate:
+      count: 2
+
+  - id: "file0"
+    type: "file"
+
+    file:
+      path: "../../../assets/test.mp4"
+      fps: 15
+
+    outputs:
+      fps: 15
+      profiles:
+        inference:
+          width: 640
+          height: 480
+          keep_aspect: true
+          interp: "linear"
+          format: "BGR"
+        ui:
+          width: 640
+          height: 480
+          keep_aspect: true
+          interp: "linear"
+          jpeg_quality: 75
+
+    replicate:
+      count: 2
