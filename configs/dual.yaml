@@ -3,29 +3,55 @@ server:
   port: 8080
 
 streams:
-  - id: "rtsp0"
-    type: "rtsp"
+#  - id: "rtsp0"
+#    type: "rtsp"
+#
+#    rtsp:
+#      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
+#      tcp: true
+#      latency_ms: 1000
+#
+#    outputs:
+#      profiles:
+#        inference:
+#          width: 960
+#          height: 540
+#          fps: 10
+#          format: "BGR"
+#        ui:
+#          width: 960
+#          height: 540
+#          fps: 10
+#          jpeg_quality: 75
+#
+#    replicate:
+#      count: 2
+#
+  - id: "cam0"
+    type: "webcam"
 
-    rtsp:
-      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
-      tcp: true
-      latency_ms: 1000
+    webcam:
+      device: "/dev/video0"
+      width: 1280
+      height: 720
+      fps: 15
+      mjpg: true
 
     outputs:
       profiles:
         inference:
-          width: 960
-          height: 540
-          fps: 10
+          width: 640
+          height: 640
+          fps: 15
           format: "BGR"
         ui:
-          width: 960
-          height: 540
-          fps: 10
+          width: 1280
+          height: 720
+          fps: 15
           jpeg_quality: 75
 
     replicate:
-      count: 2
+      count: 1
 
   - id: "file0"
     type: "file"

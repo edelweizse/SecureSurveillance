@@ -55,3 +55,7 @@ target_link_libraries(ss_core PRIVATE yaml-cpp)
 # Threads
 find_package(Threads REQUIRED)
 target_link_libraries(ss_core PRIVATE Threads::Threads)
+
+# NCNN
+find_package(ncnn REQUIRED)
+target_link_libraries(ss_core PRIVATE ncnn)
