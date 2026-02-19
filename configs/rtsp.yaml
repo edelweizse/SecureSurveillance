@@ -12,21 +12,12 @@ streams:
       fps: 30
       latency_ms: 1000
 
-    outputs:
-      fps: 30
-      profiles:
-        inference:
-          width: 640
-          height: 640
-          keep_aspect: true
-          interp: "linear"
-          format: "BGR"
-        ui:
-          width: 1280
-          height: 720
-          keep_aspect: true
-          interp: "linear"
-          jpeg_quality: 75
+    output:
+      width: 1280
+      height: 720
+      keep_aspect: true
+      interp: "linear"
+      jpeg_quality: 75
 
     replicate:
       count: 2

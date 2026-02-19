@@ -3,28 +3,29 @@ server:
   port: 8080
 
 streams:
-#  - id: "rtsp0"
-#    type: "rtsp"
-#
-#    rtsp:
-#      url: "rtsp://807e9439d5ca.entrypoint.cloud.wowza.com:1935/app-rC94792j/068b9c9a_stream2"
-#      tcp: true
-#      latency_ms: 1000
-#
-#    outputs:
-#      fps: 10
-#      profiles:
-#        inference:
-#          width: 640
-#          height: 640
-#          format: "BGR"
-#        ui:
-#          width: 960
-#          height: 540
-#          jpeg_quality: 75
-#
-#    replicate:
-#      count: 2
+  - id: "rtsp0"
+    type: "rtsp"
+
+    rtsp:
+      url: "rtsp://rtspstream:iC_SMRxQh3s8d66xv1LBW@zephyr.rtsp.stream/pattern"
+      tcp: true
+      latency_ms: 1000
+
+    outputs:
+      profiles:
+        inference:
+          width: 960
+          height: 540
+          fps: 10
+          format: "BGR"
+        ui:
+          width: 960
+          height: 540
+          fps: 10
+          jpeg_quality: 75
+
+    replicate:
+      count: 2
 
   - id: "file0"
     type: "file"
@@ -34,41 +35,17 @@ streams:
       fps: 10
 
     outputs:
-      fps: 10
       profiles:
         inference:
-          width: 640
-          height: 640
+          width: 960
+          height: 540
+          fps: 10
           format: "BGR"
         ui:
           width: 1280
           height: 720
+          fps: 10
           jpeg_quality: 75
 
     replicate:
       count: 2
-
-  - id: "cam0"
-    type: "webcam"
-
-    webcam:
-      device: "/dev/video0"
-      width: 1280
-      height: 720
-      fps: 15
-      mjpg: true
-
-    outputs:
-      fps: 10
-      profiles:
-        inference:
-          width: 640
-          height: 640
-          format: "BGR"
-        ui:
-          width: 1280
-          height: 720
-          jpeg_quality: 75
-
-    replicate:
-      count: 1

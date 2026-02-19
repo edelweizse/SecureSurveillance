@@ -23,8 +23,6 @@ namespace ss {
 
         float scale_x = 0.0f;
         float scale_y = 0.0f;
-        float offset_x = 0.0f;
-        float offset_y = 0.0f;
     };
 
     class GstDualSource {

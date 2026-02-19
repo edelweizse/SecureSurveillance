@@ -129,13 +129,10 @@ namespace ss {
             return false;
         }
 
-        if (inf_pkt.bgr.cols > 0 && inf_pkt.bgr.rows > 0 &&
-            ui_pkt.bgr.cols > 0 && ui_pkt.bgr.rows > 0) {
+        if (scale_x_ == 0.0f && inf_pkt.bgr.cols > 0 && inf_pkt.bgr.rows > 0) {
             scale_x_ = static_cast<float>(ui_pkt.bgr.cols) / static_cast<float>(inf_pkt.bgr.cols);
             scale_y_ = static_cast<float>(ui_pkt.bgr.rows) / static_cast<float>(inf_pkt.bgr.rows);
-        } else {
-            scale_x_ = 1.0f;
-            scale_y_ = 1.0f;
+            std::cout << "[GStreamer](read) scale_x: " << scale_x_ << " scale_y: " << scale_y_ << "\n";
         }
 
         out.inf_frame = inf_pkt.bgr;
@@ -146,8 +143,6 @@ namespace ss {
 
         out.scale_x = scale_x_;
         out.scale_y = scale_y_;
-        out.offset_x = 0.0f;
-        out.offset_y = 0.0f;
         return true;
     }
 

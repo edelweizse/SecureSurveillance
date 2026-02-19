@@ -13,21 +13,12 @@ streams:
       fps: 15
       mjpg: true
 
-    outputs:
-      fps: 15
-      profiles:
-        inference:
-          width: 640
-          height: 640
-          keep_aspect: true
-          interp: "linear"
-          format: "BGR"
-        ui:
-          width: 1280
-          height: 720
-          keep_aspect: true
-          interp: "linear"
-          jpeg_quality: 75
+    output:
+      width: 1280
+      height: 720
+      keep_aspect: true
+      interp: "linear"
+      jpeg_quality: 75
 
     replicate:
       count: 1
