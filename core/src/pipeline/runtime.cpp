@@ -308,7 +308,7 @@ namespace ss {
         if (!pipe) return;
 
         const std::string ui_key = pipe->stream_id + "/ui";
-        const std::string inf_key = pipe->stream_id + "/inf";
+        //const std::string inf_key = pipe->stream_id + "/inf";
 
         while (running_.load(std::memory_order_relaxed)) {
             FramePtr ctx;
@@ -329,16 +329,16 @@ namespace ss {
                 "}";
             server_.push_meta(ui_key, std::move(ui_meta));
 
-            std::string inf_meta =
-                "{"
-                "\"stream_id\":\"" + ctx->stream_id + "\","
-                "\"profile\":\"inf\","
-                "\"frame_id\":" + std::to_string(ctx->frame_id) + ","
-                "\"pts_ns\":" + std::to_string(ctx->pts_ns) + ","
-                "\"w\":" + std::to_string(ctx->inf_w) + ","
-                "\"h\":" + std::to_string(ctx->inf_h) +
-                "}";
-            server_.push_meta(inf_key, std::move(inf_meta));
+            // std::string inf_meta =
+            //     "{"
+            //     "\"stream_id\":\"" + ctx->stream_id + "\","
+            //     "\"profile\":\"inf\","
+            //     "\"frame_id\":" + std::to_string(ctx->frame_id) + ","
+            //     "\"pts_ns\":" + std::to_string(ctx->pts_ns) + ","
+            //     "\"w\":" + std::to_string(ctx->inf_w) + ","
+            //     "\"h\":" + std::to_string(ctx->inf_h) +
+            //     "}";
+            // server_.push_meta(inf_key, std::move(inf_meta));
         }
     }
 

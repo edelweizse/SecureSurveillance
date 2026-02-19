@@ -54,9 +54,9 @@ int main(int argc, char** argv) {
     opt.detector_score_thresh = 0.6f;
     opt.detector_nms_thresh = 0.3f;
 
-    opt.anonymizer_method = "pixelate"; // "pixelate" | "blur"
-    opt.anonymizer_pixelation_divisor = 25;
-    opt.anonymizer_blur_kernel = 31;
+    opt.anonymizer_method = "blur"; // "pixelate" | "blur"
+    opt.anonymizer_pixelation_divisor = 15;
+    opt.anonymizer_blur_kernel = 75;
 
     ss::PipelineRuntime rt(server, streams, opt);
     rt.start();

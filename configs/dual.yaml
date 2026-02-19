@@ -53,25 +53,24 @@ streams:
     replicate:
       count: 1
 
-  - id: "file0"
-    type: "file"
-
-    file:
-      path: "../../../assets/test.mp4"
-      fps: 10
-
-    outputs:
-      profiles:
-        inference:
-          width: 960
-          height: 540
-          fps: 10
-          format: "BGR"
-        ui:
-          width: 1280
-          height: 720
-          fps: 10
-          jpeg_quality: 75
-
-    replicate:
-      count: 2
+#  - id: "file0"
+#    type: "file"
+#
+#    file:
+#      path: "../../../assets/store.mp4"
+#      fps: 5
+#
+#    outputs:
+#      fps: 10
+#      profiles:
+#        inference:
+#          width: 640
+#          height: 640
+#          format: "BGR"
+#        ui:
+#          width: 1280
+#          height: 720
+#          jpeg_quality: 75
+#
+#    replicate:
+#      count: 2

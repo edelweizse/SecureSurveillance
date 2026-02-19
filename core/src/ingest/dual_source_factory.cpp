@@ -128,6 +128,13 @@ namespace ss {
         OutputConfig inf = need_profile(cfg, "inference");
         OutputConfig ui = need_profile(cfg, "ui");
 
+        // Backward-friendly fallback: if profile fps is unset for file input,
+        // use file.fps as branch output fps.
+        if (cfg.type == "file" && cfg.file.fps > 0) {
+            if (inf.fps <= 0) inf.fps = cfg.file.fps;
+            if (ui.fps <= 0) ui.fps = cfg.file.fps;
+        }
+
         const std::string sink_inf = "sink_" + cfg.id + "_inf";
         const std::string sink_ui = "sink_" + cfg.id + "_ui";
         std::string pipe;

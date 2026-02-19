@@ -61,10 +61,19 @@ namespace ss {
                                         float ty,
                                         int ui_w,
                                         int ui_h) const {
-        const int x = static_cast<int>(std::lround(b.x * sx + tx));
-        const int y = static_cast<int>(std::lround(b.y * sy + ty));
-        const int w = static_cast<int>(std::lround(b.w * sx));
-        const int h = static_cast<int>(std::lround(b.h * sy));
+        // Expand regions so anonymization remains fail-closed under partial occlusion.
+        const float inflate = b.occluded ? 1.55f : 1.30f;
+        const float cx = b.x + b.w * 0.5f;
+        const float cy = b.y + b.h * 0.5f;
+        const float ew = std::max(1.0f, b.w * inflate);
+        const float eh = std::max(1.0f, b.h * inflate);
+        const float ex = cx - ew * 0.5f;
+        const float ey = cy - eh * 0.5f;
+
+        const int x = static_cast<int>(std::lround(ex * sx + tx));
+        const int y = static_cast<int>(std::lround(ey * sy + ty));
+        const int w = static_cast<int>(std::lround(ew * sx));
+        const int h = static_cast<int>(std::lround(eh * sy));
 
         cv::Rect r(x, y, w, h);
         cv::Rect bounds(0, 0, ui_w, ui_h);

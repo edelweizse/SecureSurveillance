@@ -73,6 +73,7 @@ namespace ss {
     static OutputsConfig parse_outputs_config(const YAML::Node& o) {
         OutputsConfig out;
         if (!o) return out;
+        out.fps = get_int(o, "fps", 0);
         auto profiles = o["profiles"];
         if (!profiles) return out;
         if (!profiles.IsMap()) {
@@ -84,6 +85,13 @@ namespace ss {
             const YAML::Node cfg = it->second;
             out.profiles[name] = parse_output_config(cfg, OutputConfig{});
         }
+
+        if (out.fps > 0) {
+            for (auto& kv : out.profiles) {
+                kv.second.fps = out.fps;
+            }
+        }
+
         return out;
     }
 
