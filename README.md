@@ -64,12 +64,19 @@ streams:
       fps: 15
       latency_ms: 1000
 
-    output:
-      width: 1280
-      height: 720
-      keep_aspect: true
-      interp: "linear" # linear|cubic|area|nearest
-      jpeg_quality: 85
+    outputs:
+      fps: 15 # shared by inference and ui profiles
+      profiles:
+        inference:
+          width: 640
+          height: 640
+          format: "BGR"
+        ui:
+          width: 1280
+          height: 720
+          keep_aspect: true
+          interp: "linear" # linear|cubic|area|nearest
+          jpeg_quality: 85
 
     replicate:
       count: 2
@@ -83,7 +90,7 @@ streams:
 ./build/apps/core_service/core_service [config_path]
 ```
 
-If no configuration path is specified, the system defaults to `configs/webcam.yaml`.
+If no configuration path is specified, the system defaults to `configs/dual.yaml`.
 
 The service initializes the following endpoints:
 - MJPEG video stream: `http://host:port/video/<src_id>/<profile>`

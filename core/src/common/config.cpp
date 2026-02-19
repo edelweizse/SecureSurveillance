@@ -73,6 +73,7 @@ namespace ss {
     static OutputsConfig parse_outputs_config(const YAML::Node& o) {
         OutputsConfig out;
         if (!o) return out;
+        out.fps = get_int(o, "fps", 0);
         auto profiles = o["profiles"];
         if (!profiles) return out;
         if (!profiles.IsMap()) {
@@ -84,6 +85,13 @@ namespace ss {
             const YAML::Node cfg = it->second;
             out.profiles[name] = parse_output_config(cfg, OutputConfig{});
         }
+
+        if (out.fps > 0) {
+            for (auto& kv : out.profiles) {
+                kv.second.fps = out.fps;
+            }
+        }
+
         return out;
     }
 
@@ -110,8 +118,25 @@ namespace ss {
             ic.rtsp = parse_rtsp_config(s["rtsp"]);
 
             ic.replicate = parse_replicate_config(s["replicate"]);
-            ic.output = parse_output_config(s["output"], OutputConfig{});
+
+            if (s["output"]) {
+                throw std::runtime_error("[Config] stream " + ic.id +
+                                         " uses legacy 'output'; use 'outputs.fps' and 'outputs.profiles' instead.");
+            }
+
             ic.outputs = parse_outputs_config(s["outputs"]);
+            if (ic.outputs.fps <= 0) {
+                throw std::runtime_error("[Config] stream " + ic.id + " must define outputs.fps > 0.");
+            }
+            if (ic.outputs.profiles.empty()) {
+                throw std::runtime_error("[Config] stream " + ic.id + " missing outputs.profiles map.");
+            }
+            if (!ic.outputs.profiles.count("inference")) {
+                throw std::runtime_error("[Config] stream " + ic.id + " missing outputs.profiles.inference.");
+            }
+            if (!ic.outputs.profiles.count("ui")) {
+                throw std::runtime_error("[Config] stream " + ic.id + " missing outputs.profiles.ui.");
+            }
 
             if (ic.type == "rtsp" && ic.rtsp.url.empty()) {
                 throw std::runtime_error ("[Config] RTSP stream " + ic.id + " has empty URL!");

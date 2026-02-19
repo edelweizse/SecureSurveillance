@@ -42,6 +42,7 @@ namespace ss {
     };
 
     struct OutputsConfig {
+        int fps = 0;
         std::unordered_map<std::string, OutputConfig> profiles;
     };
 
@@ -54,8 +55,6 @@ namespace ss {
         RTSPConfig rtsp;
 
         ReplicateConfig replicate;
-
-        OutputConfig output;
 
         OutputsConfig outputs;
     };
