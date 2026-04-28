@@ -4,7 +4,7 @@
 #include <string>
 #include <algorithm>
 
-namespace ss {
+namespace veilsight {
     inline int interp_from_str(const std::string& s) {
         if (s == "nearest") return cv::INTER_NEAREST;
         if (s == "cubic") return cv::INTER_CUBIC;

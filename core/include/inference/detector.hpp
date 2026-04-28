@@ -8,7 +8,7 @@
 
 #include <opencv2/core.hpp>
 
-namespace ss {
+namespace veilsight {
     class IDetector {
     public:
         virtual ~IDetector() = default;

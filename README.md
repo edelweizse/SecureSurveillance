@@ -1,4 +1,4 @@
-# SecureSurveillance: ARM-Targeted PPFR Framework
+# Veilsight: ARM-Targeted PPFR Framework
 
 ## Abstract
 
@@ -34,7 +34,7 @@ The framework provides a modular architecture for real-time video frame ingestio
 ### Build Dependencies
 
 - CMake 3.16 or higher
-- C++17 compatible compiler (GCC/Clang)
+- C++20 compatible compiler (GCC/Clang)
 - OpenCV
 - GStreamer 1.0 and development libraries
 - yaml-cpp library
@@ -80,7 +80,7 @@ streams:
 ### Core Service Execution
 
 ```bash
-./build/apps/core_service/core_service [config_path]
+./build/apps/core_service/veilsight_core_service [config_path]
 ```
 
 If no configuration path is specified, the system defaults to `configs/webcam.yaml`.

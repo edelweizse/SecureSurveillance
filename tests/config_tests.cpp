@@ -35,9 +35,9 @@ namespace {
     }
 
     bool load_throws(const std::string& yaml) {
-        const std::string path = write_yaml_file("ss_cfg", yaml);
+        const std::string path = write_yaml_file("veilsight_cfg", yaml);
         try {
-            (void)ss::load_config_yaml(path);
+            (void)veilsight::load_config_yaml(path);
             std::filesystem::remove(path);
             return false;
         } catch (...) {
@@ -47,14 +47,14 @@ namespace {
     }
 
     void test_expand_replicas_fills_missing_ids() {
-        ss::IngestConfig in_cfg;
+        veilsight::IngestConfig in_cfg;
         in_cfg.id = "cam0";
         in_cfg.type = "webcam";
         in_cfg.replicate.count = 3;
         in_cfg.replicate.ids = {"custom_0"};
 
-        const std::vector<ss::IngestConfig> input = {in_cfg};
-        const auto expanded = ss::expand_replicas(input);
+        const std::vector<veilsight::IngestConfig> input = {in_cfg};
+        const auto expanded = veilsight::expand_replicas(input);
 
         check(expanded.size() == 3, "expand_replicas should output replicate.count entries");
         check(expanded[0].id == "custom_0", "expand_replicas should preserve provided ids");
@@ -123,8 +123,8 @@ namespace {
             "          height: 720\n"
             "          fps: 30\n";
 
-        const std::string path = write_yaml_file("ss_cfg_ok", yaml);
-        const auto cfg = ss::load_config_yaml(path);
+        const std::string path = write_yaml_file("veilsight_cfg_ok", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
         std::filesystem::remove(path);
 
         check(cfg.streams.size() == 1, "valid config should load exactly one stream");

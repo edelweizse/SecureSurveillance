@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace ss {
+namespace veilsight {
     namespace {
         class YuNetDetectorFactory final : public IDetectorFactory {
         public:

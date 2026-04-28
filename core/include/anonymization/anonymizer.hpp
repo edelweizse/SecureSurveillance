@@ -7,7 +7,7 @@
 
 #include <pipeline/types.hpp>
 
-namespace ss {
+namespace veilsight {
     struct AnonymizerConfig {
         // Supported methods: "pixelate", "blur"
         std::string method = "pixelate";

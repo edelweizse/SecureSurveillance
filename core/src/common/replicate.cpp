@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace ss {
+namespace veilsight {
     std::vector<IngestConfig> expand_replicas(const std::vector<IngestConfig>& in) {
         std::vector<IngestConfig> out;
         out.reserve(in.size());

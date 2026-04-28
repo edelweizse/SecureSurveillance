@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace ss {
+namespace veilsight {
     namespace {
         uint64_t now_epoch_ms() {
             return static_cast<uint64_t>(

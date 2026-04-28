@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace ss {
+namespace veilsight {
     namespace {
         TrackerConfig to_demo_tracker_config(const TrackerModuleConfig& cfg) {
             TrackerConfig tcfg;

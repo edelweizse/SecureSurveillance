@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace ss {
+namespace veilsight {
     namespace {
         class NoopRecognizer final : public IRecognizer {
         public:

@@ -20,7 +20,7 @@
 #include <pipeline/metrics.hpp>
 #include <pipeline/types.hpp>
 
-namespace ss {
+namespace veilsight {
     class PipelineRuntime {
     public:
         struct Options {

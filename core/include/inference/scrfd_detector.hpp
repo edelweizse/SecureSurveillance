@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace ss {
+namespace veilsight {
     class SCRFDDetector final : public IDetector {
     public:
         explicit SCRFDDetector(SCRFDModuleConfig cfg);

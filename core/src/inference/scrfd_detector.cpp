@@ -12,7 +12,7 @@
 #include <ncnn/allocator.h>
 #include <ncnn/net.h>
 
-namespace ss {
+namespace veilsight {
     namespace {
         float area_of(const Box& b) {
             return std::max(0.0f, b.w) * std::max(0.0f, b.h);

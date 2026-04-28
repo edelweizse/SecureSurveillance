@@ -11,7 +11,7 @@
 struct _GstElement;
 using GstElement = _GstElement;
 
-namespace ss {
+namespace veilsight {
     struct FramePacket {
         cv::Mat bgr;
         int64_t pts_ns = 0;

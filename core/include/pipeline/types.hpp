@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace ss {
+namespace veilsight {
     struct Box {
         float x = 0.0f;
         float y = 0.0f;

@@ -4,7 +4,7 @@
 
 #include <memory>
 
-namespace ss {
+namespace veilsight {
     class YuNetDetector final : public IDetector {
     public:
         explicit YuNetDetector(YuNetModuleConfig cfg);

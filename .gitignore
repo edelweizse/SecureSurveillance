@@ -1,5 +1,6 @@
 build/
 cmake-build-debug/
 assets/
-libs/
+thirdparty/
 .idea/
+/models/
