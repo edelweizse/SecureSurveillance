@@ -11,7 +11,7 @@
 
 #include "ingest/dual_source_factory.hpp"
 
-namespace ss {
+namespace veilsight {
     namespace {
         uint64_t steady_now_ns() {
             return static_cast<uint64_t>(

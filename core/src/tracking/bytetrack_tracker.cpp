@@ -10,7 +10,7 @@
 
 #include <opencv2/core.hpp>
 
-namespace ss {
+namespace veilsight {
 namespace {
 
 enum class TrackState : uint8_t {
@@ -762,4 +762,4 @@ std::unique_ptr<ITracker> create_bytetrack_tracker(const ByteTrackModuleConfig& 
     return std::make_unique<ByteTracker>(cfg);
 }
 
-} // namespace ss
+} // namespace veilsight

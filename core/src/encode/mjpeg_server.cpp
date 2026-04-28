@@ -4,7 +4,7 @@
 #include <httplib.h>
 #include <opencv2/imgcodecs.hpp>
 
-namespace ss {
+namespace veilsight {
     struct MJPEGServer:: Impl {
         httplib::Server svr;
     };

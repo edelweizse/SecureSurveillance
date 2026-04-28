@@ -7,7 +7,7 @@
 
 #include <pipeline/types.hpp>
 
-namespace ss {
+namespace veilsight {
     struct TrackerConfig {
         float high_thresh = 0.6f;
         float low_thresh = 0.2f;

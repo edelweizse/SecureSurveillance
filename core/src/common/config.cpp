@@ -2,7 +2,7 @@
 #include <iostream>
 #include <yaml-cpp/yaml.h>
 
-namespace ss {
+namespace veilsight {
     static bool get_bool(
         const YAML::Node& n, const char* key, bool def) {
         return (n && n[key]) ? n[key].as<bool>() : def;

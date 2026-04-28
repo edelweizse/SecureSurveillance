@@ -4,7 +4,7 @@
 #include <vector>
 #include <unordered_map>
 
-namespace ss {
+namespace veilsight {
     struct YuNetModuleConfig {
         std::string param_path = "models/detector/yunet/face_detection_yunet_2023mar.ncnn.param";
         std::string bin_path = "models/detector/yunet/face_detection_yunet_2023mar.ncnn.bin";

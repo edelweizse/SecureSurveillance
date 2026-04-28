@@ -4,7 +4,7 @@
 #include <chrono>
 #include <utility>
 
-namespace ss {
+namespace veilsight {
     StreamInferenceState::StreamInferenceState(std::unique_ptr<ITracker> tracker,
                                                int64_t reorder_window,
                                                size_t pending_limit)

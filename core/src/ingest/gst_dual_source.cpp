@@ -10,7 +10,7 @@
 #include <mutex>
 #include <utility>
 
-namespace ss {
+namespace veilsight {
     GstDualSource::GstDualSource(std::string pipeline,
                                  std::string id,
                                  std::string sink_inf_name,

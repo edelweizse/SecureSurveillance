@@ -12,7 +12,7 @@
 
 #include <opencv2/core.hpp>
 
-namespace ss {
+namespace veilsight {
     class MJPEGServer {
     public:
         MJPEGServer(std::string host, int port);

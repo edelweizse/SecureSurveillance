@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace ss {
+namespace veilsight {
     enum class RuntimeStage {
         Ingest,
         Detector,

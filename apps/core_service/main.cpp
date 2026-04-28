@@ -25,21 +25,21 @@ int main(int argc, char** argv) {
     if (argc >= 2) cfg_path = argv[1];
     else std::cerr << "Using default config: " << cfg_path << "\n";
 
-    ss::AppConfig cfg;
+    veilsight::AppConfig cfg;
     try {
-        cfg = ss::load_config_yaml(cfg_path);
+        cfg = veilsight::load_config_yaml(cfg_path);
     } catch (const std::exception& e) {
         std::cerr << "Config error: " << e.what() << "\n";
         return 1;
     }
 
-    std::vector<ss::IngestConfig> streams = ss::expand_replicas(cfg.streams);
+    std::vector<veilsight::IngestConfig> streams = veilsight::expand_replicas(cfg.streams);
     if (streams.empty()) {
         std::cerr << "No streams configured";
         return 1;
     }
 
-    ss::MJPEGServer server(cfg.server.url, cfg.server.port);
+    veilsight::MJPEGServer server(cfg.server.url, cfg.server.port);
     if (!server.start()) {
         std::cerr << "Server failed to start\n";
         return 1;
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
         server.register_stream(s.id + "/ui");
     }
 
-    ss::PipelineRuntime::Options opt;
+    veilsight::PipelineRuntime::Options opt;
     opt.jpeg_quality = 75;
     opt.detector = cfg.modules.detector;
     opt.tracker = cfg.modules.tracker;
@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
     opt.anonymizer_pixelation_divisor = 15;
     opt.anonymizer_blur_kernel = 75;
 
-    ss::PipelineRuntime rt(server, streams, opt);
+    veilsight::PipelineRuntime rt(server, streams, opt);
     if (!rt.start()) {
         std::cerr << "Pipeline failed to start\n";
         server.stop();

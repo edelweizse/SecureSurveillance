@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <mutex>
 
-namespace ss {
+namespace veilsight {
     template <class T>
     class BoundedQueue {
     public:

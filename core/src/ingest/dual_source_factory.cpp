@@ -4,7 +4,7 @@
 #include <filesystem>
 #include <gst/gstutils.h>
 
-namespace ss {
+namespace veilsight {
 
     static std::string to_file_uri(const std::string& path) {
         namespace fs = std::filesystem;

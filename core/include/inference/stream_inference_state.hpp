@@ -9,7 +9,7 @@
 #include <memory>
 #include <vector>
 
-namespace ss {
+namespace veilsight {
     class StreamInferenceState {
     public:
         struct Callbacks {

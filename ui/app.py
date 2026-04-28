@@ -5,7 +5,7 @@ import time
 from datetime import datetime
 
 st.set_page_config(layout="wide")
-st.title("SecureSurveillance")
+st.title("veilsight")
 
 # ----------------------------
 # Helpers

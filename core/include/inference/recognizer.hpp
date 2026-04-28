@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-namespace ss {
+namespace veilsight {
     class IRecognizer {
     public:
         virtual ~IRecognizer() = default;

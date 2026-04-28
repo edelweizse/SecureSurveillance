@@ -6,7 +6,7 @@
 
 #include <opencv2/imgproc.hpp>
 
-namespace ss {
+namespace veilsight {
     namespace {
         std::string normalize_method(std::string s) {
             std::transform(s.begin(),
