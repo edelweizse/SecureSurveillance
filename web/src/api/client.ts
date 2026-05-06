@@ -66,6 +66,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     }),
+  deleteAnalyticsRule: (rule_id: string) =>
+    request<Record<string, unknown>>(`/api/analytics/rules/${encodeURIComponent(rule_id)}`, {
+      method: "DELETE"
+    }),
   config: () => request<ConfigResponse>("/api/config"),
   validateConfig: (yaml_text: string) =>
     request<Record<string, unknown>>("/api/config/validate", {

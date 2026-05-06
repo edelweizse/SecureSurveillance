@@ -116,7 +116,7 @@ streaming:
   fallback: "mjpeg"
   codec: "h264"
   encoder: "auto"
-  bitrate_kbps: 2500
+  bitrate_kbps: 6000
   keyframe_interval_frames: 30
   webrtc:
     enabled: true

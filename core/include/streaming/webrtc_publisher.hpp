@@ -50,6 +50,7 @@ namespace veilsight {
 
         OfferResult handle_offer(const std::string& stream_key, const std::string& sdp_offer);
         bool delete_session(const std::string& session_id);
+        void clear_sessions();
         void expire_idle_sessions();
         size_t active_sessions(const std::string& stream_key) const;
 

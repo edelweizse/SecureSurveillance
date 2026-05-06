@@ -55,8 +55,23 @@ h2 { font-size: 15px; display: flex; align-items: center; gap: 6px; margin-botto
 }
 .focused-stream > header span { color: #656d78; font-size: 13px; white-space: nowrap; }
 .video-wrap { position: relative; aspect-ratio: 16 / 9; background: #101418; overflow: hidden; }
+.player-frame { position: relative; width: 100%; height: 100%; }
 .stream-media { width: 100%; height: 100%; object-fit: contain; display: block; }
-.analytics-overlay { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+.protocol-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  background: rgba(16, 20, 24, 0.78);
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 8px;
+  pointer-events: none;
+}
+.analytics-overlay { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; touch-action: none; }
 .analytics-overlay.drawing { cursor: crosshair; }
 .stream-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
 .stream-thumb {
@@ -90,7 +105,28 @@ table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { border-top: 1px solid #e3e6ea; padding: 6px 4px; text-align: left; }
 .stat-row { min-height: 30px; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #e3e6ea; }
 .stat-row:first-of-type { border-top: 0; }
-.stat-row span, .event-list small, .routes-note { color: #656d78; }
+.stat-row span, .event-list small, .routes-note, .rule-row small, .empty-inline { color: #656d78; }
+.rule-list { display: grid; gap: 7px; margin-top: 10px; }
+.rule-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid #e3e6ea;
+  padding-top: 7px;
+}
+.rule-row strong, .rule-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rule-row input {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid #c8ccd2;
+  border-radius: 6px;
+  padding: 0 8px;
+  font: inherit;
+}
+.rule-actions { display: flex; gap: 5px; }
+.rule-actions button { width: 30px; min-height: 30px; justify-content: center; padding: 0; }
+.empty-inline { border-top: 1px solid #e3e6ea; padding-top: 8px; font-size: 13px; }
 .event-list { display: grid; gap: 6px; margin-top: 10px; }
 .event-list div { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; border-top: 1px solid #e3e6ea; padding-top: 6px; }
 .routes-note { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-top: 12px; }
