@@ -1,22 +1,26 @@
 import {
   Activity,
   AreaChart,
+  Check,
+  CircleX,
   FileCheck,
   GitCommitHorizontal,
   Layers,
   MousePointer2,
+  Pencil,
   Play,
   RefreshCw,
   Route,
   Square,
+  Trash2,
   TrendingUp
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { AnalyticsSnapshot, DrawMode, OverlayLayers, Point } from "./analytics/types";
+import type { AnalyticsRule, AnalyticsSnapshot, DrawMode, OverlayLayers, Point } from "./analytics/types";
 import { api, type PipelineStatus, type StreamInfo } from "./api/client";
 import { connectJsonWebSocket } from "./api/ws";
 import { AnalyticsOverlay } from "./components/AnalyticsOverlay";
-import { WebRTCPlayer } from "./components/WebRTCPlayer";
+import { WebRTCPlayer, type StreamProtocol } from "./components/WebRTCPlayer";
 
 function streamKey(stream: Pick<StreamInfo, "stream_id" | "profile">) {
   return `${stream.stream_id}/${stream.profile}`;
@@ -70,13 +74,111 @@ function DrawTools({ mode, onChange }: { mode: DrawMode; onChange: (mode: DrawMo
   );
 }
 
+function RuleManager({
+  rules,
+  onRename,
+  onDelete
+}: {
+  rules: AnalyticsRule[];
+  onRename: (ruleId: string, name: string) => Promise<void>;
+  onDelete: (ruleId: string) => Promise<void>;
+}) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  function beginRename(rule: AnalyticsRule) {
+    setEditingId(rule.id);
+    setDraftName(rule.name);
+  }
+
+  async function saveRename(rule: AnalyticsRule) {
+    const nextName = draftName.trim();
+    if (!nextName || nextName === rule.name) {
+      setEditingId(null);
+      return;
+    }
+    setPendingId(rule.id);
+    try {
+      await onRename(rule.id, nextName);
+      setEditingId(null);
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function removeRule(rule: AnalyticsRule) {
+    setPendingId(rule.id);
+    try {
+      await onDelete(rule.id);
+      if (editingId === rule.id) setEditingId(null);
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  return (
+    <div className="rule-list" aria-label="Drawn analytical events">
+      {rules.length === 0 ? (
+        <div className="empty-inline">No drawn analytical events</div>
+      ) : (
+        rules.map((rule) => {
+          const isEditing = editingId === rule.id;
+          const pending = pendingId === rule.id;
+          return (
+            <div className="rule-row" key={rule.id}>
+              <div>
+                {isEditing ? (
+                  <input
+                    value={draftName}
+                    onChange={(event) => setDraftName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") void saveRename(rule);
+                      if (event.key === "Escape") setEditingId(null);
+                    }}
+                    aria-label={`Rename ${rule.name}`}
+                    autoFocus
+                  />
+                ) : (
+                  <strong>{rule.name}</strong>
+                )}
+                <small>{rule.kind}</small>
+              </div>
+              <div className="rule-actions">
+                {isEditing ? (
+                  <>
+                    <button onClick={() => void saveRename(rule)} disabled={pending} title="Save name" aria-label={`Save ${rule.name}`}>
+                      <Check size={15} />
+                    </button>
+                    <button onClick={() => setEditingId(null)} disabled={pending} title="Cancel rename" aria-label={`Cancel ${rule.name}`}>
+                      <CircleX size={15} />
+                    </button>
+                  </>
+                ) : (
+                  <button onClick={() => beginRename(rule)} disabled={pending} title="Rename event" aria-label={`Rename ${rule.name}`}>
+                    <Pencil size={15} />
+                  </button>
+                )}
+                <button onClick={() => void removeRule(rule)} disabled={pending} title="Delete event" aria-label={`Delete ${rule.name}`}>
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 function StreamVideo({
   stream,
   snapshot,
   layers,
   drawMode,
   onCreateRule,
-  onUpdateRule
+  onUpdateRule,
+  onProtocolChange
 }: {
   stream: StreamInfo;
   snapshot?: AnalyticsSnapshot;
@@ -84,10 +186,11 @@ function StreamVideo({
   drawMode: DrawMode;
   onCreateRule: (kind: "line" | "area", points: Point[]) => Promise<void>;
   onUpdateRule: (ruleId: string, points: Point[]) => Promise<void>;
+  onProtocolChange?: (protocol: StreamProtocol) => void;
 }) {
   return (
     <div className="video-wrap">
-      <WebRTCPlayer stream={stream} />
+      <WebRTCPlayer stream={stream} onProtocolChange={onProtocolChange} />
       <AnalyticsOverlay
         snapshot={snapshot}
         layers={layers}
@@ -107,7 +210,9 @@ function StreamWorkspace({
   drawMode,
   onSelect,
   onCreateRule,
-  onUpdateRule
+  onUpdateRule,
+  protocols,
+  onProtocolChange
 }: {
   streams: StreamInfo[];
   selectedKey: string;
@@ -117,6 +222,8 @@ function StreamWorkspace({
   onSelect: (key: string) => void;
   onCreateRule: (kind: "line" | "area", points: Point[]) => Promise<void>;
   onUpdateRule: (ruleId: string, points: Point[]) => Promise<void>;
+  protocols: Record<string, StreamProtocol>;
+  onProtocolChange: (key: string, protocol: StreamProtocol) => void;
 }) {
   const selectedStream = streams.find((stream) => streamKey(stream) === selectedKey) ?? streams[0];
   if (!selectedStream) return <div className="empty">No streams reported by runner</div>;
@@ -128,7 +235,7 @@ function StreamWorkspace({
       <article className="focused-stream">
         <header>
           <strong>{selected}</strong>
-          <span>{selectedStream.webrtc_available ? "WebRTC" : "MJPEG fallback"}</span>
+          <span>Protocol: {protocols[selected] ?? (selectedStream.webrtc_available ? "WebRTC" : "MJPEG")}</span>
         </header>
         <StreamVideo
           stream={selectedStream}
@@ -137,6 +244,7 @@ function StreamWorkspace({
           drawMode={drawMode}
           onCreateRule={onCreateRule}
           onUpdateRule={onUpdateRule}
+          onProtocolChange={(protocol) => onProtocolChange(selected, protocol)}
         />
       </article>
       <div className="stream-strip">
@@ -145,7 +253,7 @@ function StreamWorkspace({
           return (
             <button className="stream-thumb" key={key} onClick={() => onSelect(key)}>
               <div className="thumb-media">
-                <WebRTCPlayer stream={stream} />
+                <WebRTCPlayer stream={stream} preferWebRTC={false} />
               </div>
               <span>{key}</span>
             </button>
@@ -165,6 +273,7 @@ export function App() {
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [layers, setLayers] = useState<OverlayLayers>(defaultLayers);
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
+  const [streamProtocols, setStreamProtocols] = useState<Record<string, StreamProtocol>>({});
   const [configPath, setConfigPath] = useState("");
   const [yamlText, setYamlText] = useState("");
   const [configMessage, setConfigMessage] = useState("");
@@ -216,6 +325,10 @@ export function App() {
     await refresh();
   }
 
+  function updateStreamProtocol(key: string, protocol: StreamProtocol) {
+    setStreamProtocols((prev) => (prev[key] === protocol ? prev : { ...prev, [key]: protocol }));
+  }
+
   async function validateConfig() {
     const result = await api.validateConfig(yamlText);
     setConfigMessage(JSON.stringify(result, null, 2));
@@ -258,6 +371,28 @@ export function App() {
     });
   }
 
+  async function renameRule(ruleId: string, name: string) {
+    const rule = await api.updateAnalyticsRule(ruleId, { name });
+    setSnapshots((prev) => {
+      const next = { ...prev };
+      for (const [key, snapshot] of Object.entries(prev)) {
+        next[key] = { ...snapshot, rules: snapshot.rules.map((item) => (item.id === ruleId ? (rule as any) : item)) };
+      }
+      return next;
+    });
+  }
+
+  async function deleteRule(ruleId: string) {
+    await api.deleteAnalyticsRule(ruleId);
+    setSnapshots((prev) => {
+      const next = { ...prev };
+      for (const [key, snapshot] of Object.entries(prev)) {
+        next[key] = { ...snapshot, rules: snapshot.rules.filter((item) => item.id !== ruleId) };
+      }
+      return next;
+    });
+  }
+
   const globalStages = Array.isArray(metrics.global) ? metrics.global : [];
   const queues = Array.isArray(metrics.queues) ? metrics.queues : [];
 
@@ -287,6 +422,8 @@ export function App() {
           onSelect={setSelectedKey}
           onCreateRule={createRule}
           onUpdateRule={updateRule}
+          protocols={streamProtocols}
+          onProtocolChange={updateStreamProtocol}
         />
 
         <aside className="side-panel">
@@ -316,6 +453,7 @@ export function App() {
             <div className="stat-row"><span>Active</span><strong>{selectedSnapshot?.counts.active_tracks ?? 0}</strong></div>
             <div className="stat-row"><span>Unique</span><strong>{selectedSnapshot?.counts.unique_tracks ?? 0}</strong></div>
             <div className="stat-row"><span>Rules</span><strong>{selectedSnapshot?.rules.length ?? 0}</strong></div>
+            <RuleManager rules={selectedSnapshot?.rules ?? []} onRename={renameRule} onDelete={deleteRule} />
             <div className="event-list">
               {(selectedSnapshot?.recent_events ?? []).slice(0, 6).map((event) => (
                 <div key={`${event.id ?? event.ts_ms}-${event.kind}-${event.track_id}`}>

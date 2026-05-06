@@ -225,7 +225,7 @@ namespace veilsight {
         std::string fallback = "mjpeg";
         std::string codec = "h264";
         std::string encoder = "auto";
-        int bitrate_kbps = 2500;
+        int bitrate_kbps = 6000;
         int keyframe_interval_frames = 30;
         WebRTCConfig webrtc;
     };

@@ -184,6 +184,7 @@ namespace veilsight {
         state_ = "stopping";
         runtime_->stop();
         runtime_.reset();
+        webrtc_publisher_.clear_sessions();
         state_ = "stopped";
         telemetry_.publish_status("stopped", "pipeline stopped");
     }

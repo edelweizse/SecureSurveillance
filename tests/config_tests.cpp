@@ -163,7 +163,7 @@ namespace {
             "  fallback: \"mjpeg\"\n"
             "  codec: \"h264\"\n"
             "  encoder: \"auto\"\n"
-            "  bitrate_kbps: 2500\n"
+            "  bitrate_kbps: 6000\n"
             "  keyframe_interval_frames: 30\n"
             "  webrtc:\n"
             "    enabled: true\n"
@@ -191,7 +191,7 @@ namespace {
             "  fallback: \"mjpeg\"\n"
             "  codec: \"h264\"\n"
             "  encoder: \"auto\"\n"
-            "  bitrate_kbps: 2500\n"
+            "  bitrate_kbps: 6000\n"
             "  keyframe_interval_frames: 30\n");
 
         const std::string path = write_yaml_file("veilsight_streaming_cors_defaults", yaml);
