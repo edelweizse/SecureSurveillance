@@ -65,7 +65,7 @@ class ControllerSettings:
     controller_id: str = "controller"
 
     def __init__(self) -> None:
-        self.config_path = Path(os.getenv("VEILSIGHT_CONFIG", "configs/face_debug.yaml")).resolve()
+        self.config_path = Path(os.getenv("VEILSIGHT_CONFIG", "configs/full_reference.yaml")).resolve()
         self.config_dir = Path(os.getenv("VEILSIGHT_CONFIG_DIR", "configs")).resolve()
         self.runner_grpc = os.getenv("VEILSIGHT_RUNNER_GRPC", "unix:///tmp/veilsight-runner.sock")
         self.runner_public_base_url = os.getenv("VEILSIGHT_RUNNER_PUBLIC_BASE_URL", "http://localhost:8080")

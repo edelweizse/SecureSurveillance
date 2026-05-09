@@ -92,9 +92,9 @@ modules:
     model_instances: 2
     yolox:
       variant: "nano"
-      model_path: "models/detector/bytetrack_nano"
-      param_path: "models/detector/bytetrack_nano.ncnn.param"
-      bin_path: "models/detector/bytetrack_nano.ncnn.bin"
+      model_path: "models/people_detectors/yolox_nano"
+      param_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.param"
+      bin_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.bin"
       input_w: 1088
       input_h: 608
       score_threshold: 0.35
@@ -106,51 +106,22 @@ modules:
       decoded_output: false
 
     # YOLOX tiny alternative for a larger person detector.
-    # type: "yolox"
-    # model_instances: 1
-    # yolox:
-    #   variant: "tiny"
-    #   model_path: "models/detector/bytetrack_tiny"
-    #   param_path: "models/detector/bytetrack_tiny.ncnn.param"
-    #   bin_path: "models/detector/bytetrack_tiny.ncnn.bin"
-    #   input_w: 1088
-    #   input_h: 608
-    #   score_threshold: 0.35
-    #   nms_threshold: 0.45
-    #   top_k: 300
-    #   class_id: 0
-    #   ncnn_threads: 1
-    #   letterbox: true
-    #   decoded_output: false
-
-    # SCRFD is a compatible detector backend, but it is face-oriented and is
-    # not recommended as the full-body person detector for anonymization.
-    # SCRFD variants include: 500m, 25g, 10g, 500m_landmarks, 25g_landmarks.
-    # type: "scrfd"
-    # model_instances: 1
-    # scrfd:
-    #   variant: "500m"
-    #   param_path: "models/detector/scrfd_500m/scrfd_500m.ncnn.param"
-    #   bin_path: "models/detector/scrfd_500m/scrfd_500m.ncnn.bin"
-    #   input_w: 640
-    #   input_h: 640
-    #   score_threshold: 0.35
-    #   nms_threshold: 0.30
-    #   top_k: 750
-    #   ncnn_threads: 1
-
-    # YuNet is also a compatible detector backend, but it is face-oriented.
-    # type: "yunet"
-    # model_instances: 1
-    # yunet:
-    #   param_path: "models/detector/yunet/face_detection_yunet_2023mar.ncnn.param"
-    #   bin_path: "models/detector/yunet/face_detection_yunet_2023mar.ncnn.bin"
-    #   input_w: 1088
-    #   input_h: 608
-    #   score_threshold: 0.60
-    #   nms_threshold: 0.30
-    #   top_k: 750
-    #   ncnn_threads: 1
+#     type: "yolox"
+#     model_instances: 5
+#     yolox:
+#       variant: "tiny"
+#       model_path: "models/people_detectors/yolox_tiny"
+#       param_path: "models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.param"
+#       bin_path: "models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.bin"
+#       input_w: 1088
+#       input_h: 608
+#       score_threshold: 0.35
+#       nms_threshold: 0.45
+#       top_k: 300
+#       class_id: 0
+#       ncnn_threads: 4
+#       letterbox: true
+#       decoded_output: false
 
   tracker:
     type: "bytetrack"
@@ -178,8 +149,8 @@ modules:
       fuse_score: true
       scene_grid:
         enabled: true
-        rows: 6
-        cols: 8
+        rows: 36
+        cols: 64
         association_weight: 0.15
         cell_distance_weight: 0.65
         occupancy_weight: 0.15
@@ -204,19 +175,19 @@ modules:
     #   use_byte: true
 
   face_detector:
-    enabled: false
+    enabled: true
     type: "scrfd"
     model_instances: 2
     scrfd:
-      variant: "500m"
-      param_path: "models/detector/scrfd_500m/scrfd_500m.ncnn.param"
-      bin_path: "models/detector/scrfd_500m/scrfd_500m.ncnn.bin"
+      variant: "2gl"
+      param_path: "models/face_detectors/scrfd/2g/scrfd_2g_l_opt.ncnn.param"
+      bin_path: "models/face_detectors/scrfd/2g/scrfd_2g_l_opt.ncnn.bin"
       input_w: 640
       input_h: 640
       score_threshold: 0.45
       nms_threshold: 0.30
       top_k: 100
-      ncnn_threads: 1
+      ncnn_threads: 2
 
     # YuNet face detector alternative.
     # enabled: true
@@ -238,7 +209,7 @@ modules:
 
   face_policy:
     mode: "hybrid"
-    full_frame_interval: 30
+    full_frame_interval: 3
     full_frame_input_w: 640
     full_frame_input_h: 640
     roi_input_w: 320
@@ -256,19 +227,41 @@ modules:
     max_faces_per_track: 1
 
   recognizer:
-    type: "noop"
-    model_instances: 1
-    gallery_path: ""
-    unknown_threshold: 0.0
+#    type: "noop"
+#    model_instances: 1
+#    gallery_path: ""
+#    unknown_threshold: 0.0
+
+    # MobileFaceNet recognizer alternative. Gallery DBs can be created with:
+    # scripts/identity/init_mobilefacenet_gallery_db.py data/mobilefacenet_gallery.sqlite3
+     type: "mobilefacenet"
+     model_instances: 1
+     gallery_path: "data/mobilefacenet_gallery.sqlite3"
+     unknown_threshold: 0.45
+     param_path: "models/face_embeddings/mobilefacenet/mobilefacenets.param"
+     bin_path: "models/face_embeddings/mobilefacenet/mobilefacenets.bin"
+     input_blob: "data"
+     output_blob: "fc1"
+     input_w: 112
+     input_h: 112
+     embedding_dim: 128
+     ncnn_threads: 1
+     cache_ttl_frames: 900
+     min_face_score: 0.70
+     min_face_size_px: 56.0
+     min_inter_eye_px: 20.0
+     max_roll_deg: 25.0
+     max_yaw_offset_ratio: 0.35
 
   identity:
-    type: "noop"
+    type: "passthrough"
     model_instances: 1
     gallery_path: ""
     unknown_threshold: 0.0
-    # Future gallery and embedding-backed identity deciders can use gallery_path
-    # and unknown_threshold. The current noop decider marks identities unknown,
-    # so tracks remain anonymized unless a future identity module allows them.
+    # Use passthrough with recognizer.type: "mobilefacenet" to preserve known
+    # recognizer matches as privacy_action: "allow" while fail-closing empty
+    # identities to privacy_action: "anonymize".
+    # type: "passthrough"
 
 metrics:
   enabled: true
@@ -282,7 +275,7 @@ streams:
     type: "file"
     file:
       path: "../../../assets/output.mp4"
-      fps: 10
+      fps: 5
       loop: true
     outputs:
       fps: 5

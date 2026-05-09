@@ -1,5 +1,4 @@
 #include <common/config.hpp>
-#include <iostream>
 #include <stdexcept>
 #include <yaml-cpp/yaml.h>
 
@@ -154,28 +153,32 @@ namespace veilsight {
     }
 
     static std::string canonical_scrfd_variant(std::string variant) {
-        if (variant == "2.5g") return "25g";
-        if (variant == "2.5g_landmarks") return "25g_landmarks";
+        if (variant == "2.5g" || variant == "25g") return "2g";
+        if (variant == "2.5g_landmarks" || variant == "25g_landmarks" ||
+            variant == "2g_landmarks" || variant == "2g_l") {
+            return "2gl";
+        }
+        if (variant == "500m_landmarks" || variant == "500m_l") return "500ml";
         return variant;
     }
 
     static void apply_scrfd_variant_profile(SCRFDModuleConfig& cfg) {
         cfg.variant = canonical_scrfd_variant(cfg.variant);
-        if (cfg.variant == "25g") {
-            cfg.param_path = "models/detector/scrfd_25g/scrfd_25g.ncnn.param";
-            cfg.bin_path = "models/detector/scrfd_25g/scrfd_25g.ncnn.bin";
+        if (cfg.variant == "2g") {
+            cfg.param_path = "models/face_detectors/scrfd/2g/scrfd_2g.ncnn.param";
+            cfg.bin_path = "models/face_detectors/scrfd/2g/scrfd_2g.ncnn.bin";
         } else if (cfg.variant == "500m") {
-            cfg.param_path = "models/detector/scrfd_500m/scrfd_500m.ncnn.param";
-            cfg.bin_path = "models/detector/scrfd_500m/scrfd_500m.ncnn.bin";
-        } else if (cfg.variant == "25g_landmarks") {
-            cfg.param_path = "models/detector/scrfd_25g_landmarks/scrfd_25g_landmarks.ncnn.param";
-            cfg.bin_path = "models/detector/scrfd_25g_landmarks/scrfd_25g_landmarks.ncnn.bin";
-        } else if (cfg.variant == "500m_landmarks") {
-            cfg.param_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.param";
-            cfg.bin_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.bin";
+            cfg.param_path = "models/face_detectors/scrfd/500m/scrfd_500m.ncnn.param";
+            cfg.bin_path = "models/face_detectors/scrfd/500m/scrfd_500m.ncnn.bin";
+        } else if (cfg.variant == "2gl") {
+            cfg.param_path = "models/face_detectors/scrfd/2g/scrfd_2g_l.ncnn.param";
+            cfg.bin_path = "models/face_detectors/scrfd/2g/scrfd_2g_l.ncnn.bin";
+        } else if (cfg.variant == "500ml") {
+            cfg.param_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.param";
+            cfg.bin_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.bin";
         } else if (cfg.variant == "10g") {
-            cfg.param_path = "models/detector/scrfd_10g/scrfd_10g.ncnn.param";
-            cfg.bin_path = "models/detector/scrfd_10g/scrfd_10g.ncnn.bin";
+            cfg.param_path = "models/face_detectors/scrfd/10g/scrfd_10g.ncnn.param";
+            cfg.bin_path = "models/face_detectors/scrfd/10g/scrfd_10g.ncnn.bin";
         }
     }
 
@@ -202,13 +205,13 @@ namespace veilsight {
 
         cfg.variant = get_str(n, "variant", cfg.variant);
         if (cfg.variant == "nano") {
-            cfg.model_path = "models/detector/bytetrack_nano";
-            cfg.param_path = "models/detector/bytetrack_nano.ncnn.param";
-            cfg.bin_path = "models/detector/bytetrack_nano.ncnn.bin";
+            cfg.model_path = "models/people_detectors/yolox_nano";
+            cfg.param_path = "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.param";
+            cfg.bin_path = "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.bin";
         } else if (cfg.variant == "tiny") {
-            cfg.model_path = "models/detector/bytetrack_tiny";
-            cfg.param_path = "models/detector/bytetrack_tiny.ncnn.param";
-            cfg.bin_path = "models/detector/bytetrack_tiny.ncnn.bin";
+            cfg.model_path = "models/people_detectors/yolox_tiny";
+            cfg.param_path = "models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.param";
+            cfg.bin_path = "models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.bin";
         }
         cfg.model_path = get_str(n, "model_path", cfg.model_path);
         cfg.param_path = get_str(n, "param_path", cfg.param_path);
@@ -256,7 +259,7 @@ namespace veilsight {
         cfg.workers = get_positive_int_alias(n, "model_instances", "workers", cfg.workers);
 
         cfg.yunet = parse_yunet_module_config(n["yunet"]);
-        cfg.scrfd = parse_scrfd_module_config(n["scrfd"]);
+        cfg.scrfd = parse_scrfd_module_config(n["scrfd"], cfg.scrfd);
         cfg.yolox = parse_yolox_module_config(n["yolox"]);
         return cfg;
     }
@@ -350,7 +353,23 @@ namespace veilsight {
         cfg.type = get_str(n, "type", cfg.type);
         cfg.workers = get_positive_int_alias(n, "model_instances", "workers", cfg.workers);
         cfg.gallery_path = get_str(n, "gallery_path", cfg.gallery_path);
-        cfg.unknown_threshold = n["unknown_threshold"] ? n["unknown_threshold"].as<float>() : cfg.unknown_threshold;
+        cfg.unknown_threshold = n["unknown_threshold"]
+                                    ? n["unknown_threshold"].as<float>()
+                                    : (cfg.type == "mobilefacenet" ? 0.45f : cfg.unknown_threshold);
+        cfg.param_path = get_str(n, "param_path", cfg.param_path);
+        cfg.bin_path = get_str(n, "bin_path", cfg.bin_path);
+        cfg.input_blob = get_str(n, "input_blob", cfg.input_blob);
+        cfg.output_blob = get_str(n, "output_blob", cfg.output_blob);
+        cfg.input_w = get_int(n, "input_w", cfg.input_w);
+        cfg.input_h = get_int(n, "input_h", cfg.input_h);
+        cfg.embedding_dim = get_int(n, "embedding_dim", cfg.embedding_dim);
+        cfg.ncnn_threads = get_int(n, "ncnn_threads", cfg.ncnn_threads);
+        cfg.cache_ttl_frames = get_int(n, "cache_ttl_frames", cfg.cache_ttl_frames);
+        cfg.min_face_score = get_float(n, "min_face_score", cfg.min_face_score);
+        cfg.min_face_size_px = get_float(n, "min_face_size_px", cfg.min_face_size_px);
+        cfg.min_inter_eye_px = get_float(n, "min_inter_eye_px", cfg.min_inter_eye_px);
+        cfg.max_roll_deg = get_float(n, "max_roll_deg", cfg.max_roll_deg);
+        cfg.max_yaw_offset_ratio = get_float(n, "max_yaw_offset_ratio", cfg.max_yaw_offset_ratio);
         return cfg;
     }
 
@@ -598,6 +617,11 @@ namespace veilsight {
                 throw std::runtime_error(std::string("[Config] ") + name + " must be >= " + std::to_string(min_value));
             }
         };
+        const auto require_float_min = [](float value, float min_value, const char* name) {
+            if (value < min_value) {
+                throw std::runtime_error(std::string("[Config] ") + name + " must be >= " + std::to_string(min_value));
+            }
+        };
 
         const auto& runtime = config.runtime;
         require_size_min(runtime.queues.global.person_detector_in_capacity, 1,
@@ -649,6 +673,25 @@ namespace veilsight {
                             "modules.face_detector.scrfd.ncnn_threads");
         }
         require_int_min(modules.recognizer.workers, 1, "modules.recognizer.model_instances");
+        require_int_min(modules.recognizer.input_w, 1, "modules.recognizer.input_w");
+        require_int_min(modules.recognizer.input_h, 1, "modules.recognizer.input_h");
+        require_int_min(modules.recognizer.embedding_dim, 1, "modules.recognizer.embedding_dim");
+        require_int_min(modules.recognizer.ncnn_threads, 1, "modules.recognizer.ncnn_threads");
+        require_int_min(modules.recognizer.cache_ttl_frames, 1, "modules.recognizer.cache_ttl_frames");
+        require_float_min(modules.recognizer.min_face_score, 0.0f, "modules.recognizer.min_face_score");
+        require_float_min(modules.recognizer.min_face_size_px, 0.0f, "modules.recognizer.min_face_size_px");
+        require_float_min(modules.recognizer.min_inter_eye_px, 0.0f, "modules.recognizer.min_inter_eye_px");
+        require_float_min(modules.recognizer.max_roll_deg, 0.0f, "modules.recognizer.max_roll_deg");
+        require_float_min(modules.recognizer.max_yaw_offset_ratio, 0.0f,
+                          "modules.recognizer.max_yaw_offset_ratio");
+        if (modules.recognizer.type == "mobilefacenet") {
+            if (modules.recognizer.input_w != 112 || modules.recognizer.input_h != 112) {
+                throw std::runtime_error("[Config] modules.recognizer mobilefacenet requires input_w/input_h 112x112");
+            }
+            if (modules.recognizer.embedding_dim != 128) {
+                throw std::runtime_error("[Config] modules.recognizer mobilefacenet requires embedding_dim 128");
+            }
+        }
         require_int_min(modules.identity.workers, 1, "modules.identity.model_instances");
     }
 }

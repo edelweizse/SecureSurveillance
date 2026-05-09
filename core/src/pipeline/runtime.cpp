@@ -174,21 +174,28 @@ namespace veilsight {
     bool PipelineRuntime::start() {
         if (running_) return true;
 
-        auto detector_factory = create_person_detector_factory(opt_.person_detector);
-        auto tracker_factory = create_tracker_factory(opt_.tracker);
+        std::unique_ptr<IPersonDetectorFactory> detector_factory;
+        std::unique_ptr<ITrackerFactory> tracker_factory;
         std::unique_ptr<IFaceDetectorFactory> face_detector_factory;
-        if (face_pipeline_enabled(opt_.face_detector)) {
-            face_detector_factory = create_face_detector_factory(opt_.face_detector);
+        std::unique_ptr<IRecognizerFactory> recognizer_factory;
+        std::unique_ptr<IIdentityDeciderFactory> identity_factory;
+        try {
+            detector_factory = create_person_detector_factory(opt_.person_detector);
+            tracker_factory = create_tracker_factory(opt_.tracker);
+            if (face_pipeline_enabled(opt_.face_detector)) {
+                face_detector_factory = create_face_detector_factory(opt_.face_detector);
+            }
+            recognizer_factory = create_recognizer_factory(opt_.recognizer);
+            identity_factory = create_identity_decider_factory(opt_.identity);
+        } catch (const std::exception& e) {
+            std::cerr << "[Pipeline](start) failed to create stage factories: " << e.what() << "\n";
+            return false;
         }
-        auto recognizer_factory = create_recognizer_factory(opt_.recognizer);
-        auto identity_factory = create_identity_decider_factory(opt_.identity);
         if (!detector_factory || !tracker_factory || !recognizer_factory || !identity_factory) {
             std::cerr << "[Pipeline](start) failed to create stage factories.\n";
             return false;
         }
-        if (!validate_thread_budget_(*detector_factory, face_detector_factory.get(), *recognizer_factory, *identity_factory)) {
-            return false;
-        }
+        warn_if_oversubscribed_(*detector_factory, face_detector_factory.get(), *recognizer_factory, *identity_factory);
 
         anonymizer_in_.reset();
         if (opt_.metrics.enabled) {
@@ -737,7 +744,7 @@ namespace veilsight {
         }
     }
 
-    bool PipelineRuntime::validate_thread_budget_(const IPersonDetectorFactory& detector_factory,
+    void PipelineRuntime::warn_if_oversubscribed_(const IPersonDetectorFactory& detector_factory,
                                                   const IFaceDetectorFactory* face_detector_factory,
                                                   const IRecognizerFactory& recognizer_factory,
                                                   const IIdentityDeciderFactory& identity_factory) const {
@@ -764,10 +771,10 @@ namespace veilsight {
             recognizer_parallelism + identity_parallelism + anonymizer_threads + metrics_threads;
 
         if (total_parallelism <= cpu_budget) {
-            return true;
+            return;
         }
 
-        std::cerr << "[Pipeline](start) refusing oversubscribed configuration: required_threads="
+        std::cerr << "[Pipeline](start) warning: oversubscribed configuration: required_threads="
                   << total_parallelism
                   << " cpu_budget=" << cpu_budget
                   << " stream_threads=" << stream_threads
@@ -778,7 +785,6 @@ namespace veilsight {
                   << " anonymizer_threads=" << anonymizer_threads
                   << " metrics_threads=" << metrics_threads
                   << "\n";
-        return false;
     }
 
     void PipelineRuntime::anonymize_(cv::Mat& ui,

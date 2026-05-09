@@ -40,6 +40,7 @@ pkg_check_modules(GST_ALLOCATORS REQUIRED IMPORTED_TARGET gstreamer-allocators-1
 pkg_check_modules(GST_WEBRTC REQUIRED IMPORTED_TARGET gstreamer-webrtc-1.0)
 pkg_check_modules(GST_SDP REQUIRED IMPORTED_TARGET gstreamer-sdp-1.0)
 pkg_check_modules(PCRE2 REQUIRED IMPORTED_TARGET libpcre2-8)
+pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
 
 target_link_libraries(veilsight_core PRIVATE
         PkgConfig::GST
@@ -49,6 +50,7 @@ target_link_libraries(veilsight_core PRIVATE
         PkgConfig::GST_WEBRTC
         PkgConfig::GST_SDP
         PkgConfig::PCRE2
+        PkgConfig::SQLITE3
 )
 
 # YAML

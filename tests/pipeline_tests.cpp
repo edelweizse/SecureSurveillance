@@ -1,5 +1,6 @@
 #include <anonymization/anonymizer.hpp>
 #include <face_detector/face_policy.hpp>
+#include <identity/identity_decider.hpp>
 #include <pipeline/bounded_queue.hpp>
 #include <pipeline/metrics.hpp>
 #include <pipeline/stream_coordinator.hpp>
@@ -266,6 +267,69 @@ namespace {
         check(saw_full, "face probe planner should emit full-frame probes");
         check(saw_roi, "face probe planner should emit ROI probes");
     }
+
+    void test_passthrough_identity_preserves_recognizer_decisions() {
+        veilsight::IdentityModuleConfig cfg;
+        cfg.type = "passthrough";
+        const auto factory = veilsight::create_identity_decider_factory(cfg);
+        check(factory->backend_threads() == 1, "passthrough identity should report one backend thread");
+
+        auto decider = factory->create();
+        veilsight::IdentityTask task;
+        task.stream_id = "cam0";
+        task.frame_id = 12;
+        task.frame = frame(12);
+
+        veilsight::Box known = box();
+        known.id = 1;
+        known.identity_key = "alice";
+        known.identity_confidence = 0.88f;
+        known.privacy_action = "allow";
+
+        veilsight::Box unknown = box(40, 10, 20, 40);
+        unknown.id = 2;
+        unknown.identity_confidence = 0.12f;
+        unknown.privacy_action = "allow";
+        task.tracks = {known, unknown};
+
+        const auto result = decider->decide(task);
+        check(result.tracks.size() == 2, "passthrough identity should preserve track count");
+        check(result.tracks[0].identity_key == "alice" &&
+                  result.tracks[0].identity_confidence == 0.88f &&
+                  result.tracks[0].privacy_action == "allow",
+              "passthrough identity should preserve known recognizer decisions");
+        check(result.tracks[1].identity_key.empty() &&
+                  result.tracks[1].identity_confidence == 0.12f &&
+                  result.tracks[1].privacy_action == "anonymize",
+              "passthrough identity should anonymize empty identities");
+        check(task.frame->tracked_boxes.size() == 2 &&
+                  task.frame->tracked_boxes[0].identity_key == "alice" &&
+                  task.frame->tracked_boxes[1].privacy_action == "anonymize",
+              "passthrough identity should update frame tracks");
+    }
+
+    void test_noop_identity_still_anonymizes_all_tracks() {
+        veilsight::IdentityModuleConfig cfg;
+        cfg.type = "noop";
+        auto decider = veilsight::create_identity_decider(cfg);
+        veilsight::IdentityTask task;
+        task.stream_id = "cam0";
+        task.frame_id = 13;
+        task.frame = frame(13);
+        veilsight::Box known = box();
+        known.id = 1;
+        known.identity_key = "alice";
+        known.identity_confidence = 0.91f;
+        known.privacy_action = "allow";
+        task.tracks = {known};
+
+        const auto result = decider->decide(task);
+        check(result.tracks.size() == 1 &&
+                  result.tracks[0].identity_key.empty() &&
+                  result.tracks[0].identity_confidence == 0.0f &&
+                  result.tracks[0].privacy_action == "anonymize",
+              "noop identity should continue anonymizing all tracks");
+    }
 }
 
 int main() {
@@ -275,6 +339,8 @@ int main() {
     test_stream_coordinator_orders_face_recognition_identity();
     test_anonymizer_skips_non_anonymize_boxes();
     test_face_probe_planner_emits_full_frame_and_roi_probes();
+    test_passthrough_identity_preserves_recognizer_decisions();
+    test_noop_identity_still_anonymizes_all_tracks();
 
     if (g_failures != 0) {
         std::cerr << "[FAIL] total failures: " << g_failures << "\n";

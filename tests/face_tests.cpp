@@ -91,8 +91,8 @@ namespace {
     void test_scrfd_500m_landmarks_loads_and_runs_on_blank_image() {
         veilsight::SCRFDModuleConfig cfg;
         cfg.variant = "500m_landmarks";
-        cfg.param_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.param";
-        cfg.bin_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.bin";
+        cfg.param_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.param";
+        cfg.bin_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.bin";
         cfg.score_threshold = 0.45f;
         cfg.top_k = 10;
         cfg.ncnn_threads = 1;
@@ -111,8 +111,8 @@ namespace {
     void test_scrfd_landmark_outputs_decode_when_candidates_exist() {
         veilsight::SCRFDModuleConfig cfg;
         cfg.variant = "500m_landmarks";
-        cfg.param_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.param";
-        cfg.bin_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.bin";
+        cfg.param_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.param";
+        cfg.bin_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.bin";
         cfg.score_threshold = -1.0f;
         cfg.nms_threshold = 0.30f;
         cfg.top_k = 1;

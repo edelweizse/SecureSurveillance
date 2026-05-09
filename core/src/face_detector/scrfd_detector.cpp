@@ -15,8 +15,12 @@
 namespace veilsight {
     namespace {
         std::string canonical_scrfd_variant(std::string variant) {
-            if (variant == "2.5g") return "25g";
-            if (variant == "2.5g_landmarks") return "25g_landmarks";
+            if (variant == "2.5g" || variant == "25g") return "2g";
+            if (variant == "2.5g_landmarks" || variant == "25g_landmarks" ||
+                variant == "2g_landmarks" || variant == "2g_l") {
+                return "2gl";
+            }
+            if (variant == "500m_landmarks" || variant == "500m_l") return "500ml";
             return variant;
         }
 
@@ -170,10 +174,10 @@ namespace veilsight {
         explicit Impl(const SCRFDModuleConfig& cfg) {
             const std::string variant = canonical_scrfd_variant(cfg.variant);
             const bool variant_supported =
-                variant == "25g" ||
+                variant == "2g" ||
                 variant == "500m" ||
-                variant == "25g_landmarks" ||
-                variant == "500m_landmarks" ||
+                variant == "2gl" ||
+                variant == "500ml" ||
                 variant == "10g";
             if (!variant_supported) {
                 throw std::invalid_argument("[SCRFD] Unsupported variant: " + cfg.variant);
