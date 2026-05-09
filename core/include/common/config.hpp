@@ -130,26 +130,6 @@ namespace veilsight {
         SCRFDModuleConfig scrfd;
     };
 
-    struct FacePolicyConfig {
-        std::string mode = "hybrid";
-        int full_frame_interval = 30;
-        int full_frame_input_w = 640;
-        int full_frame_input_h = 640;
-        int roi_input_w = 320;
-        int roi_input_h = 320;
-        int max_roi_probes_per_frame = 2;
-        int refresh_interval = 15;
-        int reuse_ttl = 45;
-        int miss_retry_initial = 5;
-        int miss_retry_max = 30;
-        float roi_top_pad_ratio = 0.05f;
-        float roi_height_ratio = 0.55f;
-        float roi_width_expand_ratio = 0.15f;
-        int min_track_height = 48;
-        float min_face_score = 0.45f;
-        int max_faces_per_track = 1;
-    };
-
     struct RecognizerModuleConfig {
         std::string type = "noop"; // noop|none|mobilefacenet
         int workers = 1;
@@ -182,7 +162,6 @@ namespace veilsight {
         PersonDetectorModuleConfig person_detector;
         TrackerModuleConfig tracker;
         FaceDetectorModuleConfig face_detector;
-        FacePolicyConfig face_policy;
         RecognizerModuleConfig recognizer;
         IdentityModuleConfig identity;
     };

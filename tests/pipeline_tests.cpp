@@ -106,10 +106,10 @@ namespace {
     }
 
     void test_stream_coordinator_commits_in_order_with_out_of_order_person_detections() {
-        veilsight::FacePolicyConfig face_policy;
+        veilsight::FaceDetectorModuleConfig face_detector;
         veilsight::StreamCoordinator coordinator(
             std::make_unique<EchoTracker>(),
-            face_policy,
+            face_detector,
             false,
             5,
             32);
@@ -133,10 +133,10 @@ namespace {
     }
 
     void test_stale_results_are_discarded_after_commit() {
-        veilsight::FacePolicyConfig face_policy;
+        veilsight::FaceDetectorModuleConfig face_detector;
         veilsight::StreamCoordinator coordinator(
             std::make_unique<EchoTracker>(),
-            face_policy,
+            face_detector,
             false,
             1,
             32);
@@ -163,12 +163,10 @@ namespace {
     }
 
     void test_stream_coordinator_orders_face_recognition_identity() {
-        veilsight::FacePolicyConfig face_policy;
-        face_policy.full_frame_interval = 1;
-        face_policy.max_roi_probes_per_frame = 0;
+        veilsight::FaceDetectorModuleConfig face_detector;
         veilsight::StreamCoordinator coordinator(
             std::make_unique<EchoTracker>(),
-            face_policy,
+            face_detector,
             true,
             5,
             32);
@@ -183,8 +181,6 @@ namespace {
                 result.frame_id = probe.frame_id;
                 result.probe_id = probe.probe_id;
                 result.kind = probe.kind;
-                result.track_index = probe.track_index;
-                result.roi = probe.roi;
                 coordinator.push_face_result(std::move(result));
             }
         };
@@ -246,11 +242,8 @@ namespace {
               "non-anonymize privacy_action should leave the ROI untouched");
     }
 
-    void test_face_probe_planner_emits_full_frame_and_roi_probes() {
-        veilsight::FacePolicyConfig cfg;
-        cfg.full_frame_interval = 1;
-        cfg.max_roi_probes_per_frame = 1;
-        cfg.min_track_height = 10;
+    void test_face_probe_planner_emits_one_full_frame_probe() {
+        veilsight::FaceDetectorModuleConfig cfg;
         veilsight::FaceProbePlanner planner(cfg);
 
         auto f = frame(10);
@@ -258,14 +251,9 @@ namespace {
         tracks[0].id = 7;
         const auto probes = planner.plan(*f, tracks);
 
-        bool saw_full = false;
-        bool saw_roi = false;
-        for (const auto& probe : probes) {
-            saw_full = saw_full || probe.kind == veilsight::FaceProbeKind::FullFrame;
-            saw_roi = saw_roi || probe.kind == veilsight::FaceProbeKind::PersonRoi;
-        }
-        check(saw_full, "face probe planner should emit full-frame probes");
-        check(saw_roi, "face probe planner should emit ROI probes");
+        check(probes.size() == 1, "face probe planner should emit one probe per frame");
+        check(!probes.empty() && probes[0].kind == veilsight::FaceProbeKind::FullFrame,
+              "face probe planner should emit full-frame probes only");
     }
 
     void test_passthrough_identity_preserves_recognizer_decisions() {
@@ -338,7 +326,7 @@ int main() {
     test_stale_results_are_discarded_after_commit();
     test_stream_coordinator_orders_face_recognition_identity();
     test_anonymizer_skips_non_anonymize_boxes();
-    test_face_probe_planner_emits_full_frame_and_roi_probes();
+    test_face_probe_planner_emits_one_full_frame_probe();
     test_passthrough_identity_preserves_recognizer_decisions();
     test_noop_identity_still_anonymizes_all_tracks();
 

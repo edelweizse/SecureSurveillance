@@ -49,7 +49,6 @@ namespace veilsight {
             PersonDetectorModuleConfig person_detector;
             TrackerModuleConfig tracker;
             FaceDetectorModuleConfig face_detector;
-            FacePolicyConfig face_policy;
             RecognizerModuleConfig recognizer;
             IdentityModuleConfig identity;
 

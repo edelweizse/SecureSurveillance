@@ -384,16 +384,12 @@ namespace {
             "    workers: 2\n"
             "    scrfd:\n"
             "      variant: \"500m_landmarks\"\n"
+            "      input_w: 640\n"
+            "      input_h: 640\n"
             "      score_threshold: 0.45\n"
             "      nms_threshold: 0.30\n"
             "      top_k: 100\n"
             "      ncnn_threads: 1\n"
-            "  face_policy:\n"
-            "    mode: \"hybrid\"\n"
-            "    full_frame_interval: 30\n"
-            "    max_roi_probes_per_frame: 2\n"
-            "    refresh_interval: 15\n"
-            "    reuse_ttl: 45\n"
             "  recognizer:\n"
             "    type: \"noop\"\n"
             "    workers: 9\n"
@@ -438,10 +434,8 @@ namespace {
         check(cfg.modules.face_detector.scrfd.param_path.find("scrfd_500m_l") != std::string::npos,
               "face SCRFD variant should select landmark model paths");
         check(cfg.modules.face_detector.scrfd.top_k == 100, "face SCRFD top_k should parse");
-        check(cfg.modules.face_policy.full_frame_interval == 30,
-              "face policy full_frame_interval should parse");
-        check(cfg.modules.face_policy.max_roi_probes_per_frame == 2,
-              "face policy ROI budget should parse");
+        check(cfg.modules.face_detector.scrfd.input_w == 640,
+              "face detector input width should parse");
         check(cfg.modules.identity.type == "noop", "identity.type should parse noop");
         check(cfg.modules.identity.workers == 4, "identity worker count should parse");
         check(cfg.modules.identity.gallery_path == "/identity/gallery",
@@ -581,8 +575,8 @@ namespace {
               "modules.face_detector should parse into face detector config");
         check(cfg.modules.face_detector.workers == 2,
               "face_detector.model_instances should parse");
-        check(cfg.modules.face_policy.full_frame_interval == 3,
-              "face_policy.full_frame_interval should parse");
+        check(cfg.modules.face_detector.scrfd.input_w == 640,
+              "face detector input should parse");
         check(cfg.modules.recognizer.type == "mobilefacenet",
               "modules.recognizer should parse mobilefacenet");
         check(cfg.modules.identity.type == "passthrough",
@@ -635,10 +629,8 @@ namespace {
             "    model_instances: 3\n"
             "    scrfd:\n"
             "      variant: \"25g_landmarks\"\n"
-            "      ncnn_threads: 2\n"
-            "  face_policy:\n"
-            "    mode: \"hybrid\"\n"
-            "    full_frame_interval: 11\n");
+            "      input_w: 512\n"
+            "      ncnn_threads: 2\n");
 
         const std::string path = write_yaml_file("veilsight_face_top_level", yaml);
         const auto cfg = veilsight::load_config_yaml(path);
@@ -651,8 +643,8 @@ namespace {
               "top-level face detector SCRFD variant should parse");
         check(cfg.modules.face_detector.scrfd.ncnn_threads == 2,
               "top-level face detector ncnn_threads should parse");
-        check(cfg.modules.face_policy.full_frame_interval == 11,
-              "top-level face detector policy should parse");
+        check(cfg.modules.face_detector.scrfd.input_w == 512,
+              "top-level face detector input should parse");
     }
 
     void test_face_detector_can_be_disabled() {

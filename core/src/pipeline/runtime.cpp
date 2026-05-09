@@ -79,7 +79,7 @@ namespace veilsight {
           faces_in("stream/" + stream_id + "/faces.in",
                    "FaceDetectorPool",
                    "StreamCoordinator",
-                   "Face probe results keyed by frame_id and probe_id.",
+                   "Full-frame face detector results keyed by frame_id and probe_id.",
                    faces_cap),
           recognitions_in("stream/" + stream_id + "/recognitions.in",
                           "RecognizerPool",
@@ -116,7 +116,7 @@ namespace veilsight {
             : input("global/face_detector.in",
                     "StreamCoordinator",
                     "FaceDetectorPool",
-                    "Full-frame or ROI face probes from all streams.",
+                    "Full-frame face detector work from all streams.",
                     input_cap),
               factory(std::move(stage_factory)) {}
 
@@ -232,7 +232,7 @@ namespace veilsight {
             try {
                 pipe->coordinator = std::make_unique<StreamCoordinator>(
                     tracker_factory->create(),
-                    opt_.face_policy,
+                    opt_.face_detector,
                     face_enabled,
                     opt_.reorder_window,
                     opt_.pending_state_limit);
@@ -313,8 +313,6 @@ namespace veilsight {
                             result.frame_id = task.frame_id;
                             result.probe_id = task.probe_id;
                             result.kind = task.kind;
-                            result.track_index = task.track_index;
-                            result.roi = task.roi;
                             bool ok = true;
                             const uint64_t t0_ns = steady_now_ns();
 

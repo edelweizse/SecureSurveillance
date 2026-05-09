@@ -25,17 +25,14 @@ namespace veilsight {
     };
 
     enum class FaceProbeKind {
-        FullFrame,
-        PersonRoi
+        FullFrame
     };
 
     struct FaceDetectionTask {
         std::string stream_id;
         int64_t frame_id = 0;
         std::string probe_id;
-        FaceProbeKind kind = FaceProbeKind::PersonRoi;
-        size_t track_index = 0;
-        cv::Rect roi;
+        FaceProbeKind kind = FaceProbeKind::FullFrame;
         StageImage input;
         FaceDetectorRunConfig run;
     };
@@ -44,9 +41,7 @@ namespace veilsight {
         std::string stream_id;
         int64_t frame_id = 0;
         std::string probe_id;
-        FaceProbeKind kind = FaceProbeKind::PersonRoi;
-        size_t track_index = 0;
-        cv::Rect roi;
+        FaceProbeKind kind = FaceProbeKind::FullFrame;
         std::vector<FaceObservation> faces;
     };
 

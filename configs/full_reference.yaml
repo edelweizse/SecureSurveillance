@@ -203,28 +203,9 @@ modules:
     #   top_k: 750
     #   ncnn_threads: 1
 
-    # Disable face probes.
+    # Disable face detector work.
     # enabled: false
     # type: "none"
-
-  face_policy:
-    mode: "hybrid"
-    full_frame_interval: 3
-    full_frame_input_w: 640
-    full_frame_input_h: 640
-    roi_input_w: 320
-    roi_input_h: 320
-    max_roi_probes_per_frame: 2
-    refresh_interval: 15
-    reuse_ttl: 45
-    miss_retry_initial: 5
-    miss_retry_max: 30
-    roi_top_pad_ratio: 0.05
-    roi_height_ratio: 0.55
-    roi_width_expand_ratio: 0.15
-    min_track_height: 48
-    min_face_score: 0.45
-    max_faces_per_track: 1
 
   recognizer:
 #    type: "noop"
@@ -248,10 +229,10 @@ modules:
      ncnn_threads: 1
      cache_ttl_frames: 900
      min_face_score: 0.70
-     min_face_size_px: 56.0
-     min_inter_eye_px: 20.0
-     max_roll_deg: 25.0
-     max_yaw_offset_ratio: 0.35
+     min_face_size_px: 0
+     min_inter_eye_px: 0
+     max_roll_deg: 100.0
+     max_yaw_offset_ratio: 0.99
 
   identity:
     type: "passthrough"

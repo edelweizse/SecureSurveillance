@@ -310,30 +310,6 @@ namespace veilsight {
         return cfg;
     }
 
-    static FacePolicyConfig parse_face_policy_config(const YAML::Node& n, const FacePolicyConfig& def = {}) {
-        FacePolicyConfig cfg = def;
-        if (!n) return cfg;
-
-        cfg.mode = get_str(n, "mode", cfg.mode);
-        cfg.full_frame_interval = get_int(n, "full_frame_interval", cfg.full_frame_interval);
-        cfg.full_frame_input_w = get_int(n, "full_frame_input_w", cfg.full_frame_input_w);
-        cfg.full_frame_input_h = get_int(n, "full_frame_input_h", cfg.full_frame_input_h);
-        cfg.roi_input_w = get_int(n, "roi_input_w", cfg.roi_input_w);
-        cfg.roi_input_h = get_int(n, "roi_input_h", cfg.roi_input_h);
-        cfg.max_roi_probes_per_frame = get_int(n, "max_roi_probes_per_frame", cfg.max_roi_probes_per_frame);
-        cfg.refresh_interval = get_int(n, "refresh_interval", cfg.refresh_interval);
-        cfg.reuse_ttl = get_int(n, "reuse_ttl", cfg.reuse_ttl);
-        cfg.miss_retry_initial = get_int(n, "miss_retry_initial", cfg.miss_retry_initial);
-        cfg.miss_retry_max = get_int(n, "miss_retry_max", cfg.miss_retry_max);
-        cfg.roi_top_pad_ratio = get_float(n, "roi_top_pad_ratio", cfg.roi_top_pad_ratio);
-        cfg.roi_height_ratio = get_float(n, "roi_height_ratio", cfg.roi_height_ratio);
-        cfg.roi_width_expand_ratio = get_float(n, "roi_width_expand_ratio", cfg.roi_width_expand_ratio);
-        cfg.min_track_height = get_int(n, "min_track_height", cfg.min_track_height);
-        cfg.min_face_score = get_float(n, "min_face_score", cfg.min_face_score);
-        cfg.max_faces_per_track = get_int(n, "max_faces_per_track", cfg.max_faces_per_track);
-        return cfg;
-    }
-
     static FaceDetectorModuleConfig parse_face_detector_module_config(const YAML::Node& n,
                                                                       const FaceDetectorModuleConfig& def = {}) {
         FaceDetectorModuleConfig cfg = def;
@@ -392,7 +368,7 @@ namespace veilsight {
             throw std::runtime_error("[Config] modules.detector is unsupported; use modules.person_detector");
         }
         if (n["recognizer"] && n["recognizer"]["face"]) {
-            throw std::runtime_error("[Config] modules.recognizer.face is unsupported; use modules.face_detector and modules.face_policy");
+            throw std::runtime_error("[Config] modules.recognizer.face is unsupported; use modules.face_detector");
         }
 
         cfg.person_detector = parse_person_detector_module_config(n["person_detector"]);
@@ -403,7 +379,6 @@ namespace veilsight {
         } else if (!get_bool(n["face_detector"], "enabled", true)) {
             cfg.face_detector.type = "none";
         }
-        cfg.face_policy = parse_face_policy_config(n["face_policy"]);
         cfg.recognizer = parse_recognizer_module_config(n["recognizer"]);
         cfg.identity = parse_identity_module_config(n["identity"]);
         return cfg;

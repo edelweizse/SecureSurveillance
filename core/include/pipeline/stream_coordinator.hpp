@@ -24,7 +24,7 @@ namespace veilsight {
         };
 
         StreamCoordinator(std::unique_ptr<ITracker> tracker,
-                          FacePolicyConfig face_policy,
+                          FaceDetectorModuleConfig face_detector,
                           bool face_detection_enabled,
                           int64_t reorder_window = 5,
                           size_t pending_limit = 500);

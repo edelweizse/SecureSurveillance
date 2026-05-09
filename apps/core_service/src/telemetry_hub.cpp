@@ -9,8 +9,6 @@ namespace veilsight {
         const char* face_source_name(FaceSource source) {
             switch (source) {
                 case FaceSource::FullFrame: return "full_frame";
-                case FaceSource::PersonRoi: return "person_roi";
-                case FaceSource::Predicted: return "predicted";
             }
             return "unknown";
         }

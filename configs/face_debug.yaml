@@ -66,13 +66,6 @@ modules:
       top_k: 100
       ncnn_threads: 1
 
-  face_policy:
-    mode: "hybrid"
-    full_frame_interval: 30
-    max_roi_probes_per_frame: 2
-    refresh_interval: 15
-    reuse_ttl: 45
-
   recognizer:
     type: "noop"
     model_instances: 0

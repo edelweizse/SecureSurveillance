@@ -22,9 +22,7 @@ namespace veilsight {
     };
 
     enum class FaceSource {
-        FullFrame,
-        PersonRoi,
-        Predicted
+        FullFrame
     };
 
     struct FaceObservation {
@@ -33,7 +31,7 @@ namespace veilsight {
         int landmark_count = 0;
         float score = 0.0f;
         int64_t frame_id = 0;
-        FaceSource source = FaceSource::PersonRoi;
+        FaceSource source = FaceSource::FullFrame;
         bool fresh = false;
     };
 

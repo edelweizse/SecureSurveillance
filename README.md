@@ -106,11 +106,10 @@ modules:
     enabled: true
     type: "scrfd"
     model_instances: 2
-  face_policy:
-    mode: "hybrid"
-    full_frame_interval: 30
-    roi_input_w: 320
-    roi_input_h: 320
+    scrfd:
+      input_w: 640
+      input_h: 640
+      score_threshold: 0.45
   recognizer:
     type: "noop"
     model_instances: 1
