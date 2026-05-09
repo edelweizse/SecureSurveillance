@@ -16,7 +16,16 @@ from .analytics_models import (
     AnalyticsSummary,
 )
 from .analytics_service import AnalyticsService
-from .models import ConfigPayload, ConfigResponse, ControllerHealth, SaveConfigResponse, StreamsResponse
+from .models import (
+    ConfigFileInfo,
+    ConfigListResponse,
+    ConfigPayload,
+    ConfigResponse,
+    ConfigSelectPayload,
+    ControllerHealth,
+    SaveConfigResponse,
+    StreamsResponse,
+)
 from .runner_client import RunnerClient, read_text, write_text
 from .settings import ControllerSettings, settings
 from .telemetry_cache import TelemetryCache
@@ -87,6 +96,26 @@ def load_config(path: Path) -> ConfigResponse:
     return ConfigResponse(path=str(path), yaml_text=yaml_text, config=parsed)
 
 
+def available_config_paths(request_settings: ControllerSettings) -> list[Path]:
+    paths: set[Path] = set()
+    if request_settings.config_dir.exists():
+        for pattern in ("*.yaml", "*.yml"):
+            paths.update(path.resolve() for path in request_settings.config_dir.glob(pattern) if path.is_file())
+    if request_settings.config_path.exists():
+        paths.add(request_settings.config_path.resolve())
+    return sorted(paths, key=lambda path: (path.name.lower(), str(path)))
+
+
+def resolve_config_choice(raw_path: str, request_settings: ControllerSettings) -> Path:
+    requested = Path(raw_path)
+    if not requested.is_absolute():
+        requested = request_settings.config_dir / requested
+    resolved = requested.resolve()
+    if resolved not in set(available_config_paths(request_settings)):
+        raise HTTPException(status_code=400, detail={"error": "config_file_not_available", "path": raw_path})
+    return resolved
+
+
 def normalize_base_url(raw: str | None, fallback: str) -> str:
     base = (raw or fallback).rstrip("/")
     return base or fallback.rstrip("/")
@@ -133,6 +162,22 @@ async def health(client: RunnerDep, cache: CacheDep) -> ControllerHealth:
 
 @router.get("/api/config", response_model=ConfigResponse)
 async def get_config(request_settings: SettingsDep) -> ConfigResponse:
+    return load_config(request_settings.config_path)
+
+
+@router.get("/api/configs", response_model=ConfigListResponse)
+async def list_configs(request_settings: SettingsDep) -> ConfigListResponse:
+    active_path = request_settings.config_path.resolve()
+    files = [
+        ConfigFileInfo(path=str(path), name=path.name, active=path == active_path)
+        for path in available_config_paths(request_settings)
+    ]
+    return ConfigListResponse(active_path=str(active_path), files=files)
+
+
+@router.post("/api/config/select", response_model=ConfigResponse)
+async def select_config(payload: ConfigSelectPayload, request_settings: SettingsDep) -> ConfigResponse:
+    request_settings.config_path = resolve_config_choice(payload.path, request_settings)
     return load_config(request_settings.config_path)
 
 

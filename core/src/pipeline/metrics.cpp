@@ -124,9 +124,11 @@ namespace veilsight {
     const char* runtime_stage_name(RuntimeStage stage) {
         switch (stage) {
             case RuntimeStage::Ingest: return "ingest";
-            case RuntimeStage::Detector: return "detector";
+            case RuntimeStage::PersonDetector: return "person_detector";
             case RuntimeStage::Tracker: return "tracker";
+            case RuntimeStage::FaceDetector: return "face_detector";
             case RuntimeStage::Recognizer: return "recognizer";
+            case RuntimeStage::Identity: return "identity";
             case RuntimeStage::Anonymizer: return "anonymizer";
             case RuntimeStage::Encoder: return "encoder";
             case RuntimeStage::EndToEnd: return "end_to_end";
@@ -137,9 +139,11 @@ namespace veilsight {
     const std::vector<RuntimeStage>& runtime_stage_order() {
         static const std::vector<RuntimeStage> kOrder = {
             RuntimeStage::Ingest,
-            RuntimeStage::Detector,
+            RuntimeStage::PersonDetector,
             RuntimeStage::Tracker,
+            RuntimeStage::FaceDetector,
             RuntimeStage::Recognizer,
+            RuntimeStage::Identity,
             RuntimeStage::Anonymizer,
             RuntimeStage::Encoder,
             RuntimeStage::EndToEnd
@@ -247,8 +251,17 @@ namespace veilsight {
                 << "{"
                 << "\"size\":" << q.size << ","
                 << "\"capacity\":" << q.capacity << ","
-                << "\"dropped\":" << q.dropped
-                << "}";
+                << "\"dropped\":" << q.dropped;
+            if (!q.producer.empty()) {
+                oss << ",\"producer\":\"" << json_escape(q.producer) << "\"";
+            }
+            if (!q.consumer.empty()) {
+                oss << ",\"consumer\":\"" << json_escape(q.consumer) << "\"";
+            }
+            if (!q.description.empty()) {
+                oss << ",\"description\":\"" << json_escape(q.description) << "\"";
+            }
+            oss << "}";
         }
         oss << "}";
 

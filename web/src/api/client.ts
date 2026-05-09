@@ -27,6 +27,17 @@ export type ConfigResponse = {
   config?: Record<string, unknown>;
 };
 
+export type ConfigFileInfo = {
+  path: string;
+  name: string;
+  active: boolean;
+};
+
+export type ConfigListResponse = {
+  active_path: string;
+  files: ConfigFileInfo[];
+};
+
 export type AnalyticsRulePayload = {
   stream_id: string;
   profile: string;
@@ -71,6 +82,13 @@ export const api = {
       method: "DELETE"
     }),
   config: () => request<ConfigResponse>("/api/config"),
+  configs: () => request<ConfigListResponse>("/api/configs"),
+  selectConfig: (path: string) =>
+    request<ConfigResponse>("/api/config/select", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path })
+    }),
   validateConfig: (yaml_text: string) =>
     request<Record<string, unknown>>("/api/config/validate", {
       method: "POST",

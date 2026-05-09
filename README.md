@@ -61,13 +61,15 @@ In production, build the React app and run the Controller; FastAPI serves `web/d
 
 ## Configuration
 
-Person tracking uses a configurable person detector followed by ByteTrack. Detector boxes are expected in inference-frame coordinates, and anonymization remains fail-closed for all emitted person tracks:
+For a complete documented configuration, see `configs/full_reference.yaml`.
+
+The runtime stage sequence is `ingest -> person_detector -> tracker -> face_detector -> recognizer -> identity -> anonymizer -> encoder`. Person detector boxes are expected in inference-frame coordinates, and anonymization remains fail-closed for unknown tracks:
 
 ```yaml
 modules:
-  detector:
+  person_detector:
     type: "yolox" # yolox | future_person_backend
-    workers: 2
+    model_instances: 2
     yolox:
       variant: "nano"
       param_path: "models/detector/bytetrack_nano.ncnn.param"
@@ -100,7 +102,27 @@ modules:
         cols: 8
         association_weight: 0.15
         max_extra_cost: 0.30
+  face_detector:
+    enabled: true
+    type: "scrfd"
+    model_instances: 2
+  face_policy:
+    mode: "hybrid"
+    full_frame_interval: 30
+    roi_input_w: 320
+    roi_input_h: 320
+  recognizer:
+    type: "noop"
+    model_instances: 1
+  identity:
+    type: "noop"
+    model_instances: 1
 ```
+
+Runner queue metrics use explicit stage names such as `global/person_detector.in`,
+`global/recognizer.in`, and `stream/<id>/encoder.in`. The Controller `AnalyticsService.queue` is separate from the
+Runner video path; it only ingests `FrameAnalytics` telemetry for analytics overlays and
+SQLite persistence.
 
 Default same-device gRPC transport:
 

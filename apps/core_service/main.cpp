@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     std::signal(SIGINT, handle_sigint);
     std::signal(SIGTERM, handle_sigint);
 
-    std::string cfg_path = "../../../configs/dual_example.yaml";
+    std::string cfg_path = "../../../configs/face_debug.yaml";
     bool autostart = true;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];

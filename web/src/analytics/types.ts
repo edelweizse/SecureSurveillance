@@ -1,5 +1,14 @@
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; w: number; h: number };
+export type FaceObservation = {
+  bbox: Rect;
+  landmarks: Point[];
+  landmark_count: number;
+  score: number;
+  frame_id: number;
+  source: string;
+  fresh: boolean;
+};
 
 export type AnalyticsRule = {
   id: string;
@@ -36,7 +45,7 @@ export type AnalyticsSnapshot = {
   width: number;
   height: number;
   counts: { active_tracks: number; unique_tracks: number };
-  tracks: Array<{ id: number; bbox: Rect; foot: Point; dwell_s: number; velocity_px_s: number }>;
+  tracks: Array<{ id: number; bbox: Rect; foot: Point; dwell_s: number; velocity_px_s: number; face?: FaceObservation | null }>;
   heatmap: { rows: number; cols: number; values: number[]; max_value: number };
   density: { rows: number; cols: number; values: number[]; max_value: number };
   directions: Array<{ track_id: number; from: Point; to: Point; speed_px_s: number }>;
@@ -47,6 +56,7 @@ export type AnalyticsSnapshot = {
 
 export type OverlayLayers = {
   tracks: boolean;
+  faces: boolean;
   heatmap: boolean;
   density: boolean;
   directions: boolean;

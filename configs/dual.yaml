@@ -22,9 +22,9 @@ streaming:
   keyframe_interval_frames: 30
 
 modules:
-  detector:
+  person_detector:
     type: "yolox"
-    workers:  2
+    model_instances:  2
     yolox:
       variant: "nano"
       param_path: "models/detector/bytetrack_nano.ncnn.param"

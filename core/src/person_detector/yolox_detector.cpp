@@ -1,4 +1,4 @@
-#include <inference/yolox_detector.hpp>
+#include <person_detector/yolox_detector.hpp>
 
 #include <algorithm>
 #include <cmath>

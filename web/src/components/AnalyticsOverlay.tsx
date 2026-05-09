@@ -147,6 +147,26 @@ export function AnalyticsOverlay({ snapshot, layers, drawMode, onCreateRule, onU
       }
     }
 
+    if (layers.faces) {
+      ctx.font = "11px system-ui";
+      for (const track of snapshot.tracks) {
+        if (!track.face) continue;
+        const box = frameRectToCanvas(track.face.bbox, fit);
+        ctx.strokeStyle = track.face.fresh ? "#49a3ff" : "#8c939d";
+        ctx.fillStyle = track.face.fresh ? "#49a3ff" : "#8c939d";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(box.x, box.y, box.w, box.h);
+        const label = `${track.face.source || "face"} ${(track.face.score ?? 0).toFixed(2)}`;
+        ctx.fillText(label, box.x + 3, Math.max(12, box.y - 3));
+        for (const landmark of (track.face.landmarks ?? []).slice(0, track.face.landmark_count || 0)) {
+          const point = frameToCanvas(landmark, fit);
+          ctx.beginPath();
+          ctx.arc(point.x, point.y, 2.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
     if (layers.directions) {
       for (const direction of snapshot.directions) {
         const from = frameToCanvas(direction.from, fit);

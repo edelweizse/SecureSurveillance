@@ -108,12 +108,23 @@ class DensityLayer(BaseModel):
     max_value: float = 0.0
 
 
+class FaceObservation(BaseModel):
+    bbox: Rect
+    landmarks: list[Point] = Field(default_factory=list)
+    landmark_count: int = 0
+    score: float = 0.0
+    frame_id: int = 0
+    source: str = ""
+    fresh: bool = False
+
+
 class AnalyticsTrack(BaseModel):
     id: int
     bbox: Rect
     foot: Point
     dwell_s: float = 0.0
     velocity_px_s: float = 0.0
+    face: FaceObservation | None = None
 
 
 class DirectionVector(BaseModel):

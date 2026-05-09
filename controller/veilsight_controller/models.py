@@ -10,6 +10,21 @@ class ConfigPayload(BaseModel):
     config: dict[str, Any] | None = None
 
 
+class ConfigSelectPayload(BaseModel):
+    path: str
+
+
+class ConfigFileInfo(BaseModel):
+    path: str
+    name: str
+    active: bool = False
+
+
+class ConfigListResponse(BaseModel):
+    active_path: str
+    files: list[ConfigFileInfo] = Field(default_factory=list)
+
+
 class ConfigResponse(BaseModel):
     path: str
     yaml_text: str

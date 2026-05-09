@@ -132,6 +132,28 @@ def test_heatmap_density_uses_clamped_frame_delta(tmp_path: Path) -> None:
     assert result.snapshot.density.max_value == 1.0
 
 
+def test_face_observation_is_preserved_in_snapshot(tmp_path: Path) -> None:
+    engine = AnalyticsEngine(AnalyticsTestSettings(tmp_path / "analytics.sqlite3"))
+    payload = frame(1, 10, pts_ns=0)
+    payload["tracks"][0]["face"] = {
+        "bbox": {"x": 11, "y": 22, "w": 8, "h": 9},
+        "landmarks": [{"x": 12, "y": 23}],
+        "landmark_count": 1,
+        "score": 0.91,
+        "frame_id": 1,
+        "source": "full_frame",
+        "fresh": True,
+    }
+
+    result = engine.process_frame(payload, receive_ts_ms=0)
+    face = result.snapshot.tracks[0].face
+
+    assert face is not None
+    assert face.bbox.x == 11
+    assert face.landmarks[0].y == 23
+    assert face.source == "full_frame"
+
+
 def test_route_simplification_and_clustering(tmp_path: Path) -> None:
     settings = AnalyticsTestSettings(tmp_path / "analytics.sqlite3")
     settings.routes.min_route_support = 2
@@ -193,6 +215,21 @@ def test_bounded_queue_drop_behavior_is_nonblocking(tmp_path: Path) -> None:
     queued = service.queue.get_nowait()
     assert queued["frame_id"] == 2
     assert service.ingest_dropped == 1
+    service.store.close()
+
+
+def test_analytics_ingests_frame_analytics_telemetry_only(tmp_path: Path) -> None:
+    service = AnalyticsService(AnalyticsTestSettings(tmp_path / "analytics.sqlite3"))
+
+    async def run() -> None:
+        await service.handle_event({"metrics": {"queues": []}})
+        assert service.queue.empty()
+        await service.handle_event({"frame": frame(1, 10, pts_ns=0)})
+
+    asyncio.run(run())
+    queued = service.queue.get_nowait()
+    assert queued["frame_id"] == 1
+    assert queued["stream"]["stream_id"] == "cam0"
     service.store.close()
 
 

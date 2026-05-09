@@ -5,6 +5,10 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <string>
+#include <utility>
+
+#include <pipeline/metrics.hpp>
 
 namespace veilsight {
     template <class T>
@@ -78,5 +82,86 @@ namespace veilsight {
         std::deque<T> q_;
         bool stopped_ = false;
         uint64_t dropped_count_ = 0;
+    };
+
+    template <class T>
+    class NamedQueue {
+    public:
+        NamedQueue(std::string name,
+                   std::string producer,
+                   std::string consumer,
+                   std::string description,
+                   size_t capacity)
+            : name_(std::move(name)),
+              producer_(std::move(producer)),
+              consumer_(std::move(consumer)),
+              description_(std::move(description)),
+              queue_(capacity) {}
+
+        void push_drop_oldest(T v) {
+            queue_.push_drop_oldest(std::move(v));
+        }
+
+        bool try_pop(T& out) {
+            return queue_.try_pop(out);
+        }
+
+        bool pop_for(T& out, std::chrono::milliseconds d) {
+            return queue_.pop_for(out, d);
+        }
+
+        void stop() {
+            queue_.stop();
+        }
+
+        void reset() {
+            queue_.reset();
+        }
+
+        size_t size() const {
+            return queue_.size();
+        }
+
+        size_t capacity() const {
+            return queue_.capacity();
+        }
+
+        uint64_t dropped_count() const {
+            return queue_.dropped_count();
+        }
+
+        const std::string& name() const {
+            return name_;
+        }
+
+        const std::string& producer() const {
+            return producer_;
+        }
+
+        const std::string& consumer() const {
+            return consumer_;
+        }
+
+        const std::string& description() const {
+            return description_;
+        }
+
+        QueueSnapshot snapshot() const {
+            QueueSnapshot out;
+            out.size = size();
+            out.capacity = capacity();
+            out.dropped = dropped_count();
+            out.producer = producer_;
+            out.consumer = consumer_;
+            out.description = description_;
+            return out;
+        }
+
+    private:
+        std::string name_;
+        std::string producer_;
+        std::string consumer_;
+        std::string description_;
+        BoundedQueue<T> queue_;
     };
 }

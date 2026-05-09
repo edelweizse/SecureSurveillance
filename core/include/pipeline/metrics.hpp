@@ -9,9 +9,11 @@
 namespace veilsight {
     enum class RuntimeStage {
         Ingest,
-        Detector,
+        PersonDetector,
         Tracker,
+        FaceDetector,
         Recognizer,
+        Identity,
         Anonymizer,
         Encoder,
         EndToEnd
@@ -36,6 +38,9 @@ namespace veilsight {
         size_t size = 0;
         size_t capacity = 0;
         uint64_t dropped = 0;
+        std::string producer;
+        std::string consumer;
+        std::string description;
     };
 
     class RuntimeMetrics {

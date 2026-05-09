@@ -22,10 +22,10 @@ streaming:
   keyframe_interval_frames: 30
 
 modules:
-  detector:
+  person_detector:
     # "yolox" | future_person_backend
     type: "yolox"
-    workers: 4
+    model_instances: 4
 
     yolox:
       variant: "nano"
@@ -76,8 +76,8 @@ modules:
         warmup_frames: 5
 
   recognizer:
-    type: "none"
-    workers: 1
+    type: "noop"
+    model_instances: 1
     gallery_path: ""
     unknown_threshold: 0.0
 

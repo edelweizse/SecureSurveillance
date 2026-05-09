@@ -1,11 +1,12 @@
 #pragma once
 
-#include <inference/detector.hpp>
+#include <person_detector/person_detector.hpp>
+#include <face_detector/face_detector.hpp>
 
 #include <memory>
 
 namespace veilsight {
-    class SCRFDDetector final : public IDetector {
+    class SCRFDDetector final : public IPersonDetector, public IFaceDetector {
     public:
         explicit SCRFDDetector(SCRFDModuleConfig cfg);
         ~SCRFDDetector();
@@ -17,6 +18,8 @@ namespace veilsight {
         SCRFDDetector& operator=(const SCRFDDetector&) = delete;
 
         std::vector<Box> detect(const cv::Mat& bgr) override;
+        std::vector<FaceObservation> detect_faces(const cv::Mat& bgr,
+                                                  const FaceDetectorRunConfig& run) override;
 
     private:
         SCRFDModuleConfig cfg_;

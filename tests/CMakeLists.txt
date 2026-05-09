@@ -7,3 +7,11 @@ add_test(NAME veilsight_config_tests COMMAND veilsight_config_tests)
 add_executable(veilsight_tracking_tests tracking_tests.cpp)
 target_link_libraries(veilsight_tracking_tests PRIVATE veilsight_core)
 add_test(NAME veilsight_tracking_tests COMMAND veilsight_tracking_tests)
+
+add_executable(veilsight_face_tests face_tests.cpp)
+target_link_libraries(veilsight_face_tests PRIVATE veilsight_core)
+add_test(NAME veilsight_face_tests COMMAND veilsight_face_tests)
+
+add_executable(veilsight_pipeline_tests pipeline_tests.cpp)
+target_link_libraries(veilsight_pipeline_tests PRIVATE veilsight_core)
+add_test(NAME veilsight_pipeline_tests COMMAND veilsight_pipeline_tests)

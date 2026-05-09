@@ -1,4 +1,4 @@
-#include <inference/detector.hpp>
+#include <person_detector/person_detector.hpp>
 #include <tracking/association.hpp>
 #include <tracking/scene_grid.hpp>
 #include <tracking/tracker.hpp>
@@ -36,23 +36,23 @@ namespace {
     }
 
     void test_detector_factory_creates_yolox_factory() {
-        veilsight::DetectorModuleConfig cfg;
+        veilsight::PersonDetectorModuleConfig cfg;
         cfg.type = "yolox";
         cfg.yolox.ncnn_threads = 3;
-        const auto factory = veilsight::create_detector_factory(cfg);
+        const auto factory = veilsight::create_person_detector_factory(cfg);
         check(factory != nullptr, "detector factory should create a YOLOX factory by detector.type");
         check(factory->backend_threads() == 3, "YOLOX factory should expose configured NCNN internal threads");
     }
 
     void test_yolox_ncnn_detector_loads_and_runs() {
-        veilsight::DetectorModuleConfig cfg;
+        veilsight::PersonDetectorModuleConfig cfg;
         cfg.type = "yolox";
         cfg.yolox.variant = "nano";
         cfg.yolox.input_w = 1088;
         cfg.yolox.input_h = 608;
         cfg.yolox.decoded_output = false;
 
-        auto detector = veilsight::create_detector(cfg);
+        auto detector = veilsight::create_person_detector(cfg);
         const cv::Mat frame(240, 320, CV_8UC3, cv::Scalar(0, 0, 0));
         const auto boxes = detector->detect(frame);
         for (const auto& b : boxes) {
