@@ -16,6 +16,12 @@ namespace veilsight {
                 out.frame_id = task.frame_id;
                 out.frame = task.frame;
                 out.tracks = task.tracks;
+                for (auto& track : out.tracks) {
+                    track.recognition_state = "noop";
+                }
+                if (out.frame) {
+                    out.frame->tracked_boxes = out.tracks;
+                }
                 return out;
             }
         };

@@ -45,6 +45,7 @@ namespace veilsight {
             std::string identity_key;
             float identity_confidence = 0.0f;
             std::string privacy_action = "anonymize";
+            std::string recognition_state = "pending";
             int64_t last_seen_frame = 0;
         };
 
@@ -109,12 +110,14 @@ namespace veilsight {
             track.identity_key.clear();
             track.identity_confidence = 0.0f;
             track.privacy_action = "anonymize";
+            track.recognition_state = "skipped";
         }
 
         void apply_decision(Box& track, const TrackDecision& decision) {
             track.identity_key = decision.identity_key;
             track.identity_confidence = decision.identity_confidence;
             track.privacy_action = decision.privacy_action;
+            track.recognition_state = decision.recognition_state;
         }
 
         std::string resolve_path_or_throw(const std::string& p) {
@@ -365,14 +368,17 @@ namespace veilsight {
                             decision.identity_key = match.identity_key;
                             decision.identity_confidence = match.score;
                             decision.privacy_action = "allow";
+                            decision.recognition_state = "known";
                         } else {
                             decision.state = TrackRecognitionState::DecidedUnknown;
                             decision.identity_key.clear();
                             decision.identity_confidence = gallery_->entries.empty() ? 0.0f : match.score;
                             decision.privacy_action = "anonymize";
+                            decision.recognition_state = "unknown";
                         }
                         finish_decision(task.stream_id, track.id, decision, track);
                     } catch (...) {
+                        track.recognition_state = "failed";
                         clear_in_progress(task.stream_id, track.id);
                     }
                 }
@@ -413,6 +419,7 @@ namespace veilsight {
 
                 TrackDecision& decision = track_it->second;
                 if (decision.state == TrackRecognitionState::InProgress) {
+                    track.recognition_state = decision.recognition_state.empty() ? "pending" : decision.recognition_state;
                     return true;
                 }
 
@@ -440,8 +447,10 @@ namespace veilsight {
 
                 TrackDecision decision;
                 decision.state = TrackRecognitionState::InProgress;
+                decision.recognition_state = "pending";
                 decision.last_seen_frame = frame_id;
                 tracks[track_id] = std::move(decision);
+                track.recognition_state = "pending";
                 return true;
             }
 

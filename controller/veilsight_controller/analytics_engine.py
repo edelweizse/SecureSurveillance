@@ -362,6 +362,10 @@ class AnalyticsEngine:
                     foot=foot,
                     dwell_s=round(previous.dwell_s, 3),
                     velocity_px_s=round(velocity_px_s, 3),
+                    identity_key=str(track.get("identity_key") or ""),
+                    identity_confidence=float(track.get("identity_confidence") or 0.0),
+                    privacy_action=str(track.get("privacy_action") or "anonymize"),
+                    recognition_state=str(track.get("recognition_state") or ""),
                     face=parse_face_observation(track.get("face")),
                 )
             )

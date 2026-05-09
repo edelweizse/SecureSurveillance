@@ -48,6 +48,7 @@ namespace veilsight {
         std::string identity_key = "";
         float identity_confidence = 0.0f;
         std::string privacy_action = "anonymize";
+        std::string recognition_state = "";
         std::optional<FaceObservation> face;
     };
 

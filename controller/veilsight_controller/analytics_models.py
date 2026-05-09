@@ -124,6 +124,10 @@ class AnalyticsTrack(BaseModel):
     foot: Point
     dwell_s: float = 0.0
     velocity_px_s: float = 0.0
+    identity_key: str = ""
+    identity_confidence: float = 0.0
+    privacy_action: str = "anonymize"
+    recognition_state: str = ""
     face: FaceObservation | None = None
 
 

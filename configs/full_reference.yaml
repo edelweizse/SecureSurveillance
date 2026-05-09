@@ -275,10 +275,10 @@ streams:
     type: "file"
     file:
       path: "../../../assets/output.mp4"
-      fps: 5
+      fps: 4
       loop: true
     outputs:
-      fps: 5
+      fps: 4
       profiles:
         inference:
           width: 1088

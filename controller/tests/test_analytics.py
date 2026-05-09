@@ -144,10 +144,19 @@ def test_face_observation_is_preserved_in_snapshot(tmp_path: Path) -> None:
         "source": "full_frame",
         "fresh": True,
     }
+    payload["tracks"][0]["identity_key"] = "person-1"
+    payload["tracks"][0]["identity_confidence"] = 0.87
+    payload["tracks"][0]["privacy_action"] = "allow"
+    payload["tracks"][0]["recognition_state"] = "known"
 
     result = engine.process_frame(payload, receive_ts_ms=0)
+    track = result.snapshot.tracks[0]
     face = result.snapshot.tracks[0].face
 
+    assert track.identity_key == "person-1"
+    assert track.identity_confidence == 0.87
+    assert track.privacy_action == "allow"
+    assert track.recognition_state == "known"
     assert face is not None
     assert face.bbox.x == 11
     assert face.landmarks[0].y == 23

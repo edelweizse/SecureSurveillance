@@ -376,6 +376,9 @@ namespace veilsight {
                             result.frame_id = task.frame_id;
                             result.frame = task.frame;
                             result.tracks = task.tracks;
+                            for (auto& track : result.tracks) {
+                                track.recognition_state = "failed";
+                            }
                         }
 
                         if (metrics_) {

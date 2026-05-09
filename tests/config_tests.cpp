@@ -583,7 +583,10 @@ namespace {
               "face_detector.model_instances should parse");
         check(cfg.modules.face_policy.full_frame_interval == 3,
               "face_policy.full_frame_interval should parse");
-        check(cfg.modules.recognizer.type == "noop", "modules.recognizer should parse noop");
+        check(cfg.modules.recognizer.type == "mobilefacenet",
+              "modules.recognizer should parse mobilefacenet");
+        check(cfg.modules.identity.type == "passthrough",
+              "modules.identity should parse passthrough");
         check(cfg.runtime.queues.global.person_detector_in_capacity == 50,
               "runtime global person detector queue capacity should parse");
         check(cfg.runtime.queues.global.recognizer_in_capacity == 50,

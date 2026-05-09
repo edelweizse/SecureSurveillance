@@ -36,6 +36,15 @@ function drawPolyline(ctx: CanvasRenderingContext2D, points: Point[], close: boo
   if (close) ctx.closePath();
 }
 
+function trackRecognitionColor(state?: string, privacyAction?: string) {
+  const normalized = String(state || "").toLowerCase();
+  if (normalized === "known" || privacyAction === "allow") return "#159957";
+  if (normalized === "unknown") return "#d88722";
+  if (normalized === "pending") return "#2d7dd2";
+  if (normalized === "failed") return "#c33d57";
+  return "#8c939d";
+}
+
 export function AnalyticsOverlay({ snapshot, layers, drawMode, onCreateRule, onUpdateRule }: Props) {
   const ref = useRef<HTMLCanvasElement | null>(null);
   const [draftPoints, setDraftPoints] = useState<Point[]>([]);
@@ -136,14 +145,16 @@ export function AnalyticsOverlay({ snapshot, layers, drawMode, onCreateRule, onU
       for (const track of snapshot.tracks) {
         const box = frameRectToCanvas(track.bbox, fit);
         const foot = frameToCanvas(track.foot, fit);
-        ctx.strokeStyle = "#159957";
+        const color = trackRecognitionColor(track.recognition_state, track.privacy_action);
+        ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.strokeRect(box.x, box.y, box.w, box.h);
-        ctx.fillStyle = "#159957";
+        ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(foot.x, foot.y, 3.5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillText(`id:${track.id} ${track.dwell_s.toFixed(1)}s`, box.x + 4, Math.max(14, box.y - 4));
+        const recognition = track.recognition_state ? ` ${track.recognition_state}` : "";
+        ctx.fillText(`id:${track.id}${recognition} ${track.dwell_s.toFixed(1)}s`, box.x + 4, Math.max(14, box.y - 4));
       }
     }
 

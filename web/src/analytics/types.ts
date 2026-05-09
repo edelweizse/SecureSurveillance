@@ -45,7 +45,18 @@ export type AnalyticsSnapshot = {
   width: number;
   height: number;
   counts: { active_tracks: number; unique_tracks: number };
-  tracks: Array<{ id: number; bbox: Rect; foot: Point; dwell_s: number; velocity_px_s: number; face?: FaceObservation | null }>;
+  tracks: Array<{
+    id: number;
+    bbox: Rect;
+    foot: Point;
+    dwell_s: number;
+    velocity_px_s: number;
+    identity_key?: string;
+    identity_confidence?: number;
+    privacy_action?: string;
+    recognition_state?: string;
+    face?: FaceObservation | null;
+  }>;
   heatmap: { rows: number; cols: number; values: number[]; max_value: number };
   density: { rows: number; cols: number; values: number[]; max_value: number };
   directions: Array<{ track_id: number; from: Point; to: Point; speed_px_s: number }>;
