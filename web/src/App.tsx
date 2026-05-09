@@ -33,6 +33,12 @@ function queueRows(raw: unknown): Array<{ name: string; size?: number; capacity?
   return Object.entries(raw as Record<string, any>).map(([name, value]) => ({ name, ...(value ?? {}) }));
 }
 
+function stageRows(raw: unknown): Array<Record<string, any>> {
+  if (Array.isArray(raw)) return raw as Array<Record<string, any>>;
+  if (!raw || typeof raw !== "object") return [];
+  return Object.entries(raw as Record<string, any>).map(([stage, value]) => ({ stage, ...(value ?? {}) }));
+}
+
 const defaultLayers: OverlayLayers = {
   tracks: true,
   faces: true,
@@ -414,7 +420,7 @@ export function App() {
     });
   }
 
-  const globalStages = Array.isArray(metrics.global) ? metrics.global : [];
+  const globalStages = stageRows(metrics.global);
   const queues = queueRows(metrics.queues);
   const selectedStreamId = selectedStream?.stream_id ?? "";
   const visibleQueues = queues.filter((q: any) => {
@@ -464,6 +470,7 @@ export function App() {
                 ["person_detector", "person_detector"],
                 ["tracker", "tracker"],
                 ["face_detector", "face_detector"],
+                ["recognizer", "recognizer"],
                 ["identity", "identity"],
                 ["anonymizer", "anonymizer"],
                 ["encoder", "encoder"]

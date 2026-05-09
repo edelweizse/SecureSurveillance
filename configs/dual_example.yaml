@@ -29,8 +29,8 @@ modules:
 
     yolox:
       variant: "nano"
-      param_path: "models/detector/bytetrack_nano.ncnn.param"
-      bin_path: "models/detector/bytetrack_nano.ncnn.bin"
+      param_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.param"
+      bin_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.bin"
       input_w: 1088
       input_h: 608
       score_threshold: 0.35

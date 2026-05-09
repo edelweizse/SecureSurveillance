@@ -9,8 +9,6 @@ namespace veilsight {
         const char* face_source_name(FaceSource source) {
             switch (source) {
                 case FaceSource::FullFrame: return "full_frame";
-                case FaceSource::PersonRoi: return "person_roi";
-                case FaceSource::Predicted: return "predicted";
             }
             return "unknown";
         }
@@ -131,6 +129,7 @@ namespace veilsight {
             t->set_identity_key(box.identity_key);
             t->set_identity_confidence(box.identity_confidence);
             t->set_privacy_action(box.privacy_action);
+            t->set_recognition_state(box.recognition_state);
             if (box.face) {
                 auto* face = t->mutable_face();
                 auto* bbox = face->mutable_bbox();

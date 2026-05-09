@@ -289,8 +289,8 @@ namespace {
             "    workers: 2\n"
             "    yolox:\n"
             "      variant: \"tiny\"\n"
-            "      param_path: \"models/detector/bytetrack_tiny.ncnn.param\"\n"
-            "      bin_path: \"models/detector/bytetrack_tiny.ncnn.bin\"\n"
+            "      param_path: \"models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.param\"\n"
+            "      bin_path: \"models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.bin\"\n"
             "      class_id: 3\n"
             "      ncnn_threads: 4\n"
             "  tracker:\n"
@@ -323,9 +323,9 @@ namespace {
 
         check(cfg.modules.person_detector.type == "yolox", "detector.type should parse yolox");
         check(cfg.modules.person_detector.yolox.variant == "tiny", "yolox.variant should parse");
-        check(cfg.modules.person_detector.yolox.param_path == "models/detector/bytetrack_tiny.ncnn.param",
+        check(cfg.modules.person_detector.yolox.param_path == "models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.param",
               "yolox.param_path should parse");
-        check(cfg.modules.person_detector.yolox.bin_path == "models/detector/bytetrack_tiny.ncnn.bin",
+        check(cfg.modules.person_detector.yolox.bin_path == "models/people_detectors/yolox_tiny/bytetrack_tiny.ncnn.bin",
               "yolox.bin_path should parse");
         check(cfg.modules.person_detector.yolox.class_id == 3, "yolox.class_id should parse");
         check(cfg.modules.person_detector.yolox.ncnn_threads == 4, "yolox.ncnn_threads should parse");
@@ -384,16 +384,12 @@ namespace {
             "    workers: 2\n"
             "    scrfd:\n"
             "      variant: \"500m_landmarks\"\n"
+            "      input_w: 640\n"
+            "      input_h: 640\n"
             "      score_threshold: 0.45\n"
             "      nms_threshold: 0.30\n"
             "      top_k: 100\n"
             "      ncnn_threads: 1\n"
-            "  face_policy:\n"
-            "    mode: \"hybrid\"\n"
-            "    full_frame_interval: 30\n"
-            "    max_roi_probes_per_frame: 2\n"
-            "    refresh_interval: 15\n"
-            "    reuse_ttl: 45\n"
             "  recognizer:\n"
             "    type: \"noop\"\n"
             "    workers: 9\n"
@@ -431,21 +427,87 @@ namespace {
         check(cfg.modules.face_detector.type == "scrfd", "face detector type should parse");
         check(cfg.modules.face_detector.workers == 2,
               "face detector worker count should parse independently");
-        check(cfg.modules.face_detector.scrfd.variant == "500m_landmarks",
+        check(cfg.modules.face_detector.scrfd.variant == "500ml",
               "face SCRFD variant should parse");
         check(cfg.modules.face_detector.scrfd.ncnn_threads == 1,
               "face detector internal threads should parse independently");
-        check(cfg.modules.face_detector.scrfd.param_path.find("scrfd_500m_landmarks") != std::string::npos,
+        check(cfg.modules.face_detector.scrfd.param_path.find("scrfd_500m_l") != std::string::npos,
               "face SCRFD variant should select landmark model paths");
         check(cfg.modules.face_detector.scrfd.top_k == 100, "face SCRFD top_k should parse");
-        check(cfg.modules.face_policy.full_frame_interval == 30,
-              "face policy full_frame_interval should parse");
-        check(cfg.modules.face_policy.max_roi_probes_per_frame == 2,
-              "face policy ROI budget should parse");
+        check(cfg.modules.face_detector.scrfd.input_w == 640,
+              "face detector input width should parse");
         check(cfg.modules.identity.type == "noop", "identity.type should parse noop");
         check(cfg.modules.identity.workers == 4, "identity worker count should parse");
         check(cfg.modules.identity.gallery_path == "/identity/gallery",
               "identity.gallery_path should not inherit recognizer.gallery_path");
+    }
+
+    void test_mobilefacenet_recognizer_config_parses_and_validates() {
+        const std::string yaml = minimal_config_yaml(
+            "modules:\n"
+            "  recognizer:\n"
+            "    type: \"mobilefacenet\"\n"
+            "    model_instances: 2\n"
+            "    gallery_path: \"/tmp/gallery.sqlite3\"\n"
+            "    param_path: \"models/face_embeddings/mobilefacenet/mobilefacenets.param\"\n"
+            "    bin_path: \"models/face_embeddings/mobilefacenet/mobilefacenets.bin\"\n"
+            "    input_blob: \"data\"\n"
+            "    output_blob: \"fc1\"\n"
+            "    input_w: 112\n"
+            "    input_h: 112\n"
+            "    embedding_dim: 128\n"
+            "    ncnn_threads: 3\n"
+            "    cache_ttl_frames: 123\n"
+            "    min_face_score: 0.71\n"
+            "    min_face_size_px: 57.0\n"
+            "    min_inter_eye_px: 21.0\n"
+            "    max_roll_deg: 24.0\n"
+            "    max_yaw_offset_ratio: 0.34\n"
+            "  identity:\n"
+            "    type: \"passthrough\"\n");
+
+        const std::string path = write_yaml_file("veilsight_mobilefacenet_cfg_ok", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        check(cfg.modules.recognizer.type == "mobilefacenet", "recognizer.type should parse mobilefacenet");
+        check(cfg.modules.recognizer.workers == 2, "mobilefacenet model_instances should parse");
+        check(cfg.modules.recognizer.gallery_path == "/tmp/gallery.sqlite3", "mobilefacenet gallery_path should parse");
+        check(cfg.modules.recognizer.unknown_threshold == 0.45f,
+              "mobilefacenet unknown_threshold should default to 0.45");
+        check(cfg.modules.recognizer.input_blob == "data", "mobilefacenet input_blob should parse");
+        check(cfg.modules.recognizer.output_blob == "fc1", "mobilefacenet output_blob should parse");
+        check(cfg.modules.recognizer.input_w == 112 && cfg.modules.recognizer.input_h == 112,
+              "mobilefacenet input size should parse");
+        check(cfg.modules.recognizer.embedding_dim == 128, "mobilefacenet embedding_dim should parse");
+        check(cfg.modules.recognizer.ncnn_threads == 3, "mobilefacenet ncnn_threads should parse");
+        check(cfg.modules.recognizer.cache_ttl_frames == 123, "mobilefacenet cache_ttl_frames should parse");
+        check(cfg.modules.recognizer.min_face_score == 0.71f, "mobilefacenet min_face_score should parse");
+        check(cfg.modules.recognizer.min_face_size_px == 57.0f, "mobilefacenet min_face_size_px should parse");
+        check(cfg.modules.recognizer.min_inter_eye_px == 21.0f, "mobilefacenet min_inter_eye_px should parse");
+        check(cfg.modules.recognizer.max_roll_deg == 24.0f, "mobilefacenet max_roll_deg should parse");
+        check(cfg.modules.recognizer.max_yaw_offset_ratio == 0.34f,
+              "mobilefacenet max_yaw_offset_ratio should parse");
+        check(cfg.modules.identity.type == "passthrough", "identity.type should parse passthrough");
+
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  recognizer:\n"
+                  "    type: \"mobilefacenet\"\n"
+                  "    input_w: 111\n")),
+              "mobilefacenet should reject non-112 input width");
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  recognizer:\n"
+                  "    type: \"mobilefacenet\"\n"
+                  "    embedding_dim: 127\n")),
+              "mobilefacenet should reject non-128 embedding_dim");
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  recognizer:\n"
+                  "    type: \"noop\"\n"
+                  "    ncnn_threads: 0\n")),
+              "recognizer internal thread count should reject zero");
     }
 
     void test_scrfd_variant_aliases_resolve() {
@@ -455,11 +517,11 @@ namespace {
             std::string path_fragment;
         };
         const std::vector<Case> cases = {
-            {"2.5g", "25g", "scrfd_25g"},
-            {"25g", "25g", "scrfd_25g"},
-            {"2.5g_landmarks", "25g_landmarks", "scrfd_25g_landmarks"},
-            {"25g_landmarks", "25g_landmarks", "scrfd_25g_landmarks"},
-            {"500m_landmarks", "500m_landmarks", "scrfd_500m_landmarks"},
+            {"2.5g", "2g", "scrfd_2g"},
+            {"25g", "2g", "scrfd_2g"},
+            {"2.5g_landmarks", "2gl", "scrfd_2g_l"},
+            {"25g_landmarks", "2gl", "scrfd_2g_l"},
+            {"500m_landmarks", "500ml", "scrfd_500m_l"},
             {"10g", "10g", "scrfd_10g"},
         };
 
@@ -513,9 +575,12 @@ namespace {
               "modules.face_detector should parse into face detector config");
         check(cfg.modules.face_detector.workers == 2,
               "face_detector.model_instances should parse");
-        check(cfg.modules.face_policy.full_frame_interval == 30,
-              "face_policy.full_frame_interval should parse");
-        check(cfg.modules.recognizer.type == "noop", "modules.recognizer should parse noop");
+        check(cfg.modules.face_detector.scrfd.input_w == 640,
+              "face detector input should parse");
+        check(cfg.modules.recognizer.type == "mobilefacenet",
+              "modules.recognizer should parse mobilefacenet");
+        check(cfg.modules.identity.type == "passthrough",
+              "modules.identity should parse passthrough");
         check(cfg.runtime.queues.global.person_detector_in_capacity == 50,
               "runtime global person detector queue capacity should parse");
         check(cfg.runtime.queues.global.recognizer_in_capacity == 50,
@@ -564,10 +629,8 @@ namespace {
             "    model_instances: 3\n"
             "    scrfd:\n"
             "      variant: \"25g_landmarks\"\n"
-            "      ncnn_threads: 2\n"
-            "  face_policy:\n"
-            "    mode: \"hybrid\"\n"
-            "    full_frame_interval: 11\n");
+            "      input_w: 512\n"
+            "      ncnn_threads: 2\n");
 
         const std::string path = write_yaml_file("veilsight_face_top_level", yaml);
         const auto cfg = veilsight::load_config_yaml(path);
@@ -576,12 +639,12 @@ namespace {
         check(cfg.modules.face_detector.type == "scrfd", "top-level face detector type should parse");
         check(cfg.modules.face_detector.workers == 3,
               "top-level face_detector.model_instances should parse");
-        check(cfg.modules.face_detector.scrfd.variant == "25g_landmarks",
+        check(cfg.modules.face_detector.scrfd.variant == "2gl",
               "top-level face detector SCRFD variant should parse");
         check(cfg.modules.face_detector.scrfd.ncnn_threads == 2,
               "top-level face detector ncnn_threads should parse");
-        check(cfg.modules.face_policy.full_frame_interval == 11,
-              "top-level face detector policy should parse");
+        check(cfg.modules.face_detector.scrfd.input_w == 512,
+              "top-level face detector input should parse");
     }
 
     void test_face_detector_can_be_disabled() {
@@ -724,6 +787,7 @@ int main() {
     test_person_detector_and_scene_grid_config();
     test_legacy_person_class_id_alias();
     test_face_detector_recognizer_identity_config_parses();
+    test_mobilefacenet_recognizer_config_parses_and_validates();
     test_scrfd_variant_aliases_resolve();
     test_full_reference_config_loads();
     test_model_instances_aliases_workers();

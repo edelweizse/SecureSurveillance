@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SQLITE3 REQUIRED IMPORTED_TARGET sqlite3)
+find_package(ncnn REQUIRED)
+
 add_executable(veilsight_config_tests config_tests.cpp)
 target_link_libraries(veilsight_config_tests PRIVATE veilsight_core)
 add_test(NAME veilsight_config_tests COMMAND veilsight_config_tests)
@@ -11,6 +15,10 @@ add_test(NAME veilsight_tracking_tests COMMAND veilsight_tracking_tests)
 add_executable(veilsight_face_tests face_tests.cpp)
 target_link_libraries(veilsight_face_tests PRIVATE veilsight_core)
 add_test(NAME veilsight_face_tests COMMAND veilsight_face_tests)
+
+add_executable(veilsight_recognizer_tests recognizer_tests.cpp)
+target_link_libraries(veilsight_recognizer_tests PRIVATE veilsight_core PkgConfig::SQLITE3 ncnn)
+add_test(NAME veilsight_recognizer_tests COMMAND veilsight_recognizer_tests)
 
 add_executable(veilsight_pipeline_tests pipeline_tests.cpp)
 target_link_libraries(veilsight_pipeline_tests PRIVATE veilsight_core)

@@ -4,6 +4,9 @@
 #include <utility>
 
 namespace veilsight {
+    std::unique_ptr<IRecognizerFactory> create_mobilefacenet_recognizer_factory(
+        const RecognizerModuleConfig& cfg);
+
     namespace {
         class NoopRecognizer final : public IRecognizer {
         public:
@@ -13,6 +16,12 @@ namespace veilsight {
                 out.frame_id = task.frame_id;
                 out.frame = task.frame;
                 out.tracks = task.tracks;
+                for (auto& track : out.tracks) {
+                    track.recognition_state = "noop";
+                }
+                if (out.frame) {
+                    out.frame->tracked_boxes = out.tracks;
+                }
                 return out;
             }
         };
@@ -38,6 +47,9 @@ namespace veilsight {
     std::unique_ptr<IRecognizerFactory> create_recognizer_factory(const RecognizerModuleConfig& cfg) {
         if (cfg.type.empty() || cfg.type == "noop" || cfg.type == "none") {
             return std::make_unique<NoopRecognizerFactory>(cfg);
+        }
+        if (cfg.type == "mobilefacenet") {
+            return create_mobilefacenet_recognizer_factory(cfg);
         }
         throw std::invalid_argument("[Recognizer] Unsupported recognizer type: " + cfg.type);
     }

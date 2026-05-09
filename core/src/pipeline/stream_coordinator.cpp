@@ -6,13 +6,13 @@
 
 namespace veilsight {
     StreamCoordinator::StreamCoordinator(std::unique_ptr<ITracker> tracker,
-                                         FacePolicyConfig face_policy,
+                                         FaceDetectorModuleConfig face_detector,
                                          bool face_detection_enabled,
                                          int64_t reorder_window,
                                          size_t pending_limit)
         : tracker_(std::move(tracker)),
-          face_probe_planner_(face_policy),
-          face_result_applier_(face_policy, face_probe_planner_.state_store()),
+          face_probe_planner_(face_detector),
+          face_result_applier_(face_detector, face_probe_planner_.state_store()),
           face_detection_enabled_(face_detection_enabled),
           reorder_window_(std::max<int64_t>(0, reorder_window)),
           pending_limit_(std::max<size_t>(1, pending_limit)) {}

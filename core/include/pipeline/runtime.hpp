@@ -49,7 +49,6 @@ namespace veilsight {
             PersonDetectorModuleConfig person_detector;
             TrackerModuleConfig tracker;
             FaceDetectorModuleConfig face_detector;
-            FacePolicyConfig face_policy;
             RecognizerModuleConfig recognizer;
             IdentityModuleConfig identity;
 
@@ -109,7 +108,7 @@ namespace veilsight {
 
         void publish_identity_result_(IdentityResult result);
         void commit_frame_(const FramePtr& frame);
-        bool validate_thread_budget_(const IPersonDetectorFactory& detector_factory,
+        void warn_if_oversubscribed_(const IPersonDetectorFactory& detector_factory,
                                      const IFaceDetectorFactory* face_detector_factory,
                                      const IRecognizerFactory& recognizer_factory,
                                      const IIdentityDeciderFactory& identity_factory) const;

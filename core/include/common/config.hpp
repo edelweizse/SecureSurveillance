@@ -20,8 +20,8 @@ namespace veilsight {
 
     struct SCRFDModuleConfig {
         std::string variant = "500m";
-        std::string param_path = "models/detector/scrfd_500m/scrfd_500m.ncnn.param";
-        std::string bin_path = "models/detector/scrfd_500m/scrfd_500m.ncnn.bin";
+        std::string param_path = "models/face_detectors/scrfd/500m/scrfd_500m.ncnn.param";
+        std::string bin_path = "models/face_detectors/scrfd/500m/scrfd_500m.ncnn.bin";
         int input_w = 640;
         int input_h = 640;
         float score_threshold = 0.35f;
@@ -32,9 +32,9 @@ namespace veilsight {
 
     struct YoloXModuleConfig {
         std::string variant = "nano";
-        std::string model_path = "models/detector/bytetrack_nano";
-        std::string param_path = "models/detector/bytetrack_nano.ncnn.param";
-        std::string bin_path = "models/detector/bytetrack_nano.ncnn.bin";
+        std::string model_path = "models/people_detectors/yolox_nano";
+        std::string param_path = "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.param";
+        std::string bin_path = "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.bin";
         int input_w = 640;
         int input_h = 640;
         float score_threshold = 0.35f;
@@ -113,9 +113,9 @@ namespace veilsight {
 
     struct FaceDetectorModuleConfig {
         FaceDetectorModuleConfig() {
-            scrfd.variant = "500m_landmarks";
-            scrfd.param_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.param";
-            scrfd.bin_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.bin";
+            scrfd.variant = "500ml";
+            scrfd.param_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.param";
+            scrfd.bin_path = "models/face_detectors/scrfd/500m/scrfd_500m_l.ncnn.bin";
             scrfd.input_w = 640;
             scrfd.input_h = 640;
             scrfd.score_threshold = 0.45f;
@@ -130,35 +130,29 @@ namespace veilsight {
         SCRFDModuleConfig scrfd;
     };
 
-    struct FacePolicyConfig {
-        std::string mode = "hybrid";
-        int full_frame_interval = 30;
-        int full_frame_input_w = 640;
-        int full_frame_input_h = 640;
-        int roi_input_w = 320;
-        int roi_input_h = 320;
-        int max_roi_probes_per_frame = 2;
-        int refresh_interval = 15;
-        int reuse_ttl = 45;
-        int miss_retry_initial = 5;
-        int miss_retry_max = 30;
-        float roi_top_pad_ratio = 0.05f;
-        float roi_height_ratio = 0.55f;
-        float roi_width_expand_ratio = 0.15f;
-        int min_track_height = 48;
-        float min_face_score = 0.45f;
-        int max_faces_per_track = 1;
-    };
-
     struct RecognizerModuleConfig {
-        std::string type = "noop"; // noop|none
+        std::string type = "noop"; // noop|none|mobilefacenet
         int workers = 1;
         std::string gallery_path;
         float unknown_threshold = 0.0f;
+        std::string param_path = "models/face_embeddings/mobilefacenet/mobilefacenets.param";
+        std::string bin_path = "models/face_embeddings/mobilefacenet/mobilefacenets.bin";
+        std::string input_blob = "data";
+        std::string output_blob = "fc1";
+        int input_w = 112;
+        int input_h = 112;
+        int embedding_dim = 128;
+        int ncnn_threads = 1;
+        int cache_ttl_frames = 900;
+        float min_face_score = 0.70f;
+        float min_face_size_px = 56.0f;
+        float min_inter_eye_px = 20.0f;
+        float max_roll_deg = 25.0f;
+        float max_yaw_offset_ratio = 0.35f;
     };
 
     struct IdentityModuleConfig {
-        std::string type = "noop"; // noop
+        std::string type = "noop"; // noop|none|passthrough
         int workers = 1;
         std::string gallery_path;
         float unknown_threshold = 0.0f;
@@ -168,7 +162,6 @@ namespace veilsight {
         PersonDetectorModuleConfig person_detector;
         TrackerModuleConfig tracker;
         FaceDetectorModuleConfig face_detector;
-        FacePolicyConfig face_policy;
         RecognizerModuleConfig recognizer;
         IdentityModuleConfig identity;
     };

@@ -120,6 +120,7 @@ message Track {
   float identity_confidence = 9;
   string privacy_action = 10;
   FaceObservation face = 11;
+  string recognition_state = 12;
 }
 
 message FrameAnalytics {

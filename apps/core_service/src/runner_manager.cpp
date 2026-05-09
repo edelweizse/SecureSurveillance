@@ -139,7 +139,6 @@ namespace veilsight {
         opt.person_detector = config.modules.person_detector;
         opt.tracker = config.modules.tracker;
         opt.face_detector = config.modules.face_detector;
-        opt.face_policy = config.modules.face_policy;
         opt.recognizer = config.modules.recognizer;
         opt.identity = config.modules.identity;
         opt.metrics = config.metrics;

@@ -27,8 +27,8 @@ modules:
     model_instances: 2
     yolox:
       variant: "nano"
-      param_path: "models/detector/bytetrack_nano.ncnn.param"
-      bin_path: "models/detector/bytetrack_nano.ncnn.bin"
+      param_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.param"
+      bin_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.bin"
       input_w: 1088
       input_h: 608
       score_threshold: 0.35
@@ -65,13 +65,6 @@ modules:
       nms_threshold: 0.30
       top_k: 100
       ncnn_threads: 1
-
-  face_policy:
-    mode: "hybrid"
-    full_frame_interval: 30
-    max_roi_probes_per_frame: 2
-    refresh_interval: 15
-    reuse_ttl: 45
 
   recognizer:
     type: "noop"

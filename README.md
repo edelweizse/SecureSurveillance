@@ -72,8 +72,8 @@ modules:
     model_instances: 2
     yolox:
       variant: "nano"
-      param_path: "models/detector/bytetrack_nano.ncnn.param"
-      bin_path: "models/detector/bytetrack_nano.ncnn.bin"
+      param_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.param"
+      bin_path: "models/people_detectors/yolox_nano/bytetrack_nano.ncnn.bin"
       input_w: 1088
       input_h: 608
       score_threshold: 0.35
@@ -106,11 +106,10 @@ modules:
     enabled: true
     type: "scrfd"
     model_instances: 2
-  face_policy:
-    mode: "hybrid"
-    full_frame_interval: 30
-    roi_input_w: 320
-    roi_input_h: 320
+    scrfd:
+      input_w: 640
+      input_h: 640
+      score_threshold: 0.45
   recognizer:
     type: "noop"
     model_instances: 1
@@ -118,6 +117,30 @@ modules:
     type: "noop"
     model_instances: 1
 ```
+
+For gallery-based identity allowlisting, use the MobileFaceNet recognizer with
+the passthrough identity stage:
+
+```yaml
+modules:
+  recognizer:
+    type: "mobilefacenet"
+    model_instances: 1
+    gallery_path: "data/mobilefacenet_gallery.sqlite3"
+    unknown_threshold: 0.45
+    param_path: "models/face_embeddings/mobilefacenet/mobilefacenets.param"
+    bin_path: "models/face_embeddings/mobilefacenet/mobilefacenets.bin"
+    ncnn_threads: 1
+  identity:
+    type: "passthrough"
+```
+
+The gallery is a read-only SQLite DB loaded at pipeline startup. It stores active
+`identities` and active 128-D float32 `face_embeddings` for
+`model = 'mobilefacenet'`. `scripts/identity/init_mobilefacenet_gallery_db.py`
+creates the schema and can import precomputed embeddings from JSON. Known
+matches set `privacy_action: "allow"` and unknown or no-decision tracks remain
+`"anonymize"`.
 
 Runner queue metrics use explicit stage names such as `global/person_detector.in`,
 `global/recognizer.in`, and `stream/<id>/encoder.in`. The Controller `AnalyticsService.queue` is separate from the

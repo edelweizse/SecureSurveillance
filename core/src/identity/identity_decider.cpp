@@ -41,11 +41,51 @@ namespace veilsight {
         private:
             IdentityModuleConfig cfg_;
         };
+
+        class PassthroughIdentityDecider final : public IIdentityDecider {
+        public:
+            IdentityResult decide(const IdentityTask& task) override {
+                IdentityResult out;
+                out.stream_id = task.stream_id;
+                out.frame_id = task.frame_id;
+                out.frame = task.frame;
+                out.tracks = task.tracks;
+                for (auto& track : out.tracks) {
+                    if (track.identity_key.empty()) {
+                        track.privacy_action = "anonymize";
+                    }
+                }
+                if (out.frame) {
+                    out.frame->tracked_boxes = out.tracks;
+                }
+                return out;
+            }
+        };
+
+        class PassthroughIdentityDeciderFactory final : public IIdentityDeciderFactory {
+        public:
+            explicit PassthroughIdentityDeciderFactory(IdentityModuleConfig cfg)
+                : cfg_(std::move(cfg)) {}
+
+            std::unique_ptr<IIdentityDecider> create() const override {
+                return std::make_unique<PassthroughIdentityDecider>();
+            }
+
+            int backend_threads() const override {
+                return 1;
+            }
+
+        private:
+            IdentityModuleConfig cfg_;
+        };
     }
 
     std::unique_ptr<IIdentityDeciderFactory> create_identity_decider_factory(const IdentityModuleConfig& cfg) {
         if (cfg.type.empty() || cfg.type == "noop" || cfg.type == "none") {
             return std::make_unique<NoopIdentityDeciderFactory>(cfg);
+        }
+        if (cfg.type == "passthrough") {
+            return std::make_unique<PassthroughIdentityDeciderFactory>(cfg);
         }
         throw std::invalid_argument("[Identity] Unsupported identity decider type: " + cfg.type);
     }
