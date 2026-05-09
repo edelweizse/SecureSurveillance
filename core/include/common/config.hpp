@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -44,7 +46,7 @@ namespace veilsight {
         bool decoded_output = false;
     };
 
-    struct DetectorModuleConfig {
+    struct PersonDetectorModuleConfig {
         std::string type = "yolox"; // yolox|yunet|scrfd
         int workers = 1;
         YuNetModuleConfig yunet;
@@ -109,17 +111,66 @@ namespace veilsight {
         OCSortModuleConfig ocsort;
     };
 
+    struct FaceDetectorModuleConfig {
+        FaceDetectorModuleConfig() {
+            scrfd.variant = "500m_landmarks";
+            scrfd.param_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.param";
+            scrfd.bin_path = "models/detector/scrfd_500m_landmarks/scrfd_500m_landmarks.ncnn.bin";
+            scrfd.input_w = 640;
+            scrfd.input_h = 640;
+            scrfd.score_threshold = 0.45f;
+            scrfd.nms_threshold = 0.30f;
+            scrfd.top_k = 100;
+            scrfd.ncnn_threads = 1;
+        }
+
+        std::string type = "scrfd"; // none|scrfd|yunet
+        int workers = 1;
+        YuNetModuleConfig yunet;
+        SCRFDModuleConfig scrfd;
+    };
+
+    struct FacePolicyConfig {
+        std::string mode = "hybrid";
+        int full_frame_interval = 30;
+        int full_frame_input_w = 640;
+        int full_frame_input_h = 640;
+        int roi_input_w = 320;
+        int roi_input_h = 320;
+        int max_roi_probes_per_frame = 2;
+        int refresh_interval = 15;
+        int reuse_ttl = 45;
+        int miss_retry_initial = 5;
+        int miss_retry_max = 30;
+        float roi_top_pad_ratio = 0.05f;
+        float roi_height_ratio = 0.55f;
+        float roi_width_expand_ratio = 0.15f;
+        int min_track_height = 48;
+        float min_face_score = 0.45f;
+        int max_faces_per_track = 1;
+    };
+
     struct RecognizerModuleConfig {
-        std::string type = "none"; // none
+        std::string type = "noop"; // noop|none
+        int workers = 1;
+        std::string gallery_path;
+        float unknown_threshold = 0.0f;
+    };
+
+    struct IdentityModuleConfig {
+        std::string type = "noop"; // noop
         int workers = 1;
         std::string gallery_path;
         float unknown_threshold = 0.0f;
     };
 
     struct ModulesConfig {
-        DetectorModuleConfig detector;
+        PersonDetectorModuleConfig person_detector;
         TrackerModuleConfig tracker;
+        FaceDetectorModuleConfig face_detector;
+        FacePolicyConfig face_policy;
         RecognizerModuleConfig recognizer;
+        IdentityModuleConfig identity;
     };
 
     struct MetricsConfig {
@@ -230,11 +281,49 @@ namespace veilsight {
         WebRTCConfig webrtc;
     };
 
+    struct RuntimeQueueGlobalConfig {
+        size_t person_detector_in_capacity = 50;
+        size_t face_detector_in_capacity = 50;
+        size_t recognizer_in_capacity = 50;
+        size_t identity_in_capacity = 50;
+        size_t anonymizer_in_capacity = 50;
+    };
+
+    struct RuntimeQueuePerStreamConfig {
+        size_t frames_in_capacity = 5;
+        size_t person_detections_in_capacity = 20;
+        size_t faces_in_capacity = 20;
+        size_t recognitions_in_capacity = 20;
+        size_t identities_in_capacity = 20;
+        size_t encoder_in_capacity = 5;
+    };
+
+    struct RuntimeQueueConfig {
+        RuntimeQueueGlobalConfig global;
+        RuntimeQueuePerStreamConfig per_stream;
+    };
+
+    struct RuntimeAnonymizerConfig {
+        int model_instances = 1;
+        std::string method = "pixelate";
+        int pixelation_divisor = 10;
+        int blur_kernel = 31;
+    };
+
+    struct PipelineRuntimeConfig {
+        RuntimeQueueConfig queues;
+        RuntimeAnonymizerConfig anonymizer;
+        int64_t reorder_window = 5;
+        size_t pending_state_limit = 500;
+        int jpeg_quality = 75;
+    };
+
     struct AppConfig {
         ServerConfig server;
         ControllerConfig controller;
         RunnerConfig runner;
         StreamingConfig streaming;
+        PipelineRuntimeConfig runtime;
         ModulesConfig modules;
         MetricsConfig metrics;
         std::vector<IngestConfig> streams;

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <inference/detector.hpp>
+#include <person_detector/person_detector.hpp>
 
 #include <memory>
 
 namespace veilsight {
-    class YoloXDetector final : public IDetector {
+    class YoloXDetector final : public IPersonDetector {
     public:
         explicit YoloXDetector(YoloXModuleConfig cfg);
         ~YoloXDetector();

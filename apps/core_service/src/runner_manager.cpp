@@ -136,11 +136,31 @@ namespace veilsight {
 
     PipelineRuntime::Options RunnerManager::make_options_(const AppConfig& config) {
         PipelineRuntime::Options opt;
-        opt.detector = config.modules.detector;
+        opt.person_detector = config.modules.person_detector;
         opt.tracker = config.modules.tracker;
+        opt.face_detector = config.modules.face_detector;
+        opt.face_policy = config.modules.face_policy;
         opt.recognizer = config.modules.recognizer;
+        opt.identity = config.modules.identity;
         opt.metrics = config.metrics;
-        opt.jpeg_quality = 75;
+        opt.person_detector_in_cap = config.runtime.queues.global.person_detector_in_capacity;
+        opt.face_detector_in_cap = config.runtime.queues.global.face_detector_in_capacity;
+        opt.recognizer_in_cap = config.runtime.queues.global.recognizer_in_capacity;
+        opt.identity_in_cap = config.runtime.queues.global.identity_in_capacity;
+        opt.anonymizer_in_cap = config.runtime.queues.global.anonymizer_in_capacity;
+        opt.frames_in_cap = config.runtime.queues.per_stream.frames_in_capacity;
+        opt.person_detections_in_cap = config.runtime.queues.per_stream.person_detections_in_capacity;
+        opt.faces_in_cap = config.runtime.queues.per_stream.faces_in_capacity;
+        opt.recognitions_in_cap = config.runtime.queues.per_stream.recognitions_in_capacity;
+        opt.identities_in_cap = config.runtime.queues.per_stream.identities_in_capacity;
+        opt.encoder_in_cap = config.runtime.queues.per_stream.encoder_in_capacity;
+        opt.reorder_window = config.runtime.reorder_window;
+        opt.pending_state_limit = config.runtime.pending_state_limit;
+        opt.jpeg_quality = config.runtime.jpeg_quality;
+        opt.anonymizer_workers = config.runtime.anonymizer.model_instances;
+        opt.anonymizer_method = config.runtime.anonymizer.method;
+        opt.anonymizer_pixelation_divisor = config.runtime.anonymizer.pixelation_divisor;
+        opt.anonymizer_blur_kernel = config.runtime.anonymizer.blur_kernel;
         return opt;
     }
 

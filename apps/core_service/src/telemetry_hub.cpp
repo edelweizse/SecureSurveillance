@@ -6,6 +6,15 @@
 
 namespace veilsight {
     namespace {
+        const char* face_source_name(FaceSource source) {
+            switch (source) {
+                case FaceSource::FullFrame: return "full_frame";
+                case FaceSource::PersonRoi: return "person_roi";
+                case FaceSource::Predicted: return "predicted";
+            }
+            return "unknown";
+        }
+
         void fill_stage(runner::v1::StageMetrics* out,
                         const std::string& name,
                         const StageSnapshot& in) {
@@ -122,6 +131,25 @@ namespace veilsight {
             t->set_identity_key(box.identity_key);
             t->set_identity_confidence(box.identity_confidence);
             t->set_privacy_action(box.privacy_action);
+            if (box.face) {
+                auto* face = t->mutable_face();
+                auto* bbox = face->mutable_bbox();
+                bbox->set_x(box.face->bbox.x);
+                bbox->set_y(box.face->bbox.y);
+                bbox->set_w(box.face->bbox.w);
+                bbox->set_h(box.face->bbox.h);
+                const int landmark_count = std::clamp(box.face->landmark_count, 0, 5);
+                for (int i = 0; i < landmark_count; ++i) {
+                    auto* landmark = face->add_landmarks();
+                    landmark->set_x(box.face->landmarks[static_cast<size_t>(i)].x);
+                    landmark->set_y(box.face->landmarks[static_cast<size_t>(i)].y);
+                }
+                face->set_landmark_count(landmark_count);
+                face->set_score(box.face->score);
+                face->set_frame_id(box.face->frame_id);
+                face->set_source(face_source_name(box.face->source));
+                face->set_fresh(box.face->fresh);
+            }
         }
         publish_(std::move(event), false);
     }
@@ -156,6 +184,9 @@ namespace veilsight {
             q->set_size(queue.size);
             q->set_capacity(queue.capacity);
             q->set_dropped(queue.dropped);
+            q->set_producer(queue.producer);
+            q->set_consumer(queue.consumer);
+            q->set_description(queue.description);
         }
 
         {

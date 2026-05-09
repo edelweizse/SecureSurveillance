@@ -86,6 +86,28 @@ message WatchTelemetryRequest {
 
 message GetMetricsSnapshotRequest {}
 
+message PointF {
+  float x = 1;
+  float y = 2;
+}
+
+message RectF {
+  float x = 1;
+  float y = 2;
+  float w = 3;
+  float h = 4;
+}
+
+message FaceObservation {
+  RectF bbox = 1;
+  repeated PointF landmarks = 2;
+  int32 landmark_count = 3;
+  float score = 4;
+  int64 frame_id = 5;
+  string source = 6;
+  bool fresh = 7;
+}
+
 message Track {
   int32 id = 1;
   float x = 2;
@@ -97,6 +119,7 @@ message Track {
   string identity_key = 8;
   float identity_confidence = 9;
   string privacy_action = 10;
+  FaceObservation face = 11;
 }
 
 message FrameAnalytics {
@@ -113,6 +136,9 @@ message QueueSnapshot {
   uint64 size = 2;
   uint64 capacity = 3;
   uint64 dropped = 4;
+  string producer = 5;
+  string consumer = 6;
+  string description = 7;
 }
 
 message StageMetrics {

@@ -11,15 +11,18 @@
 
 #include <anonymization/anonymizer.hpp>
 #include <common/config.hpp>
-#include <inference/detector.hpp>
-#include <inference/recognizer.hpp>
-#include <inference/stream_inference_state.hpp>
+#include <person_detector/person_detector.hpp>
+#include <face_detector/face_detector.hpp>
+#include <identity/identity_decider.hpp>
 #include <ingest/gst_dual_source.hpp>
 #include <pipeline/bounded_queue.hpp>
 #include <pipeline/lifecycle.hpp>
 #include <pipeline/metrics.hpp>
 #include <pipeline/publishers.hpp>
+#include <pipeline/stream_coordinator.hpp>
+#include <pipeline/tasks.hpp>
 #include <pipeline/types.hpp>
+#include <recognizer/recognizer.hpp>
 
 namespace veilsight {
     class PipelineRuntime : public IPipelineLifecycle {
@@ -27,22 +30,28 @@ namespace veilsight {
         struct Options {
             int jpeg_quality = 75;
 
-            size_t infer_in_cap = 50;
-            size_t inf_state_in_cap = 5;
-            size_t det_res_cap = 20;
+            size_t person_detector_in_cap = 50;
+            size_t frames_in_cap = 5;
+            size_t person_detections_in_cap = 20;
+            size_t face_detector_in_cap = 50;
+            size_t faces_in_cap = 20;
             size_t recognizer_in_cap = 50;
-            size_t recognizer_done_cap = 20;
-            size_t anon_in_cap = 50;
-            size_t enc_in_cap = 5;
-            size_t analytics_cap = 256;
+            size_t recognitions_in_cap = 20;
+            size_t identity_in_cap = 50;
+            size_t identities_in_cap = 20;
+            size_t anonymizer_in_cap = 50;
+            size_t encoder_in_cap = 5;
 
             int64_t reorder_window = 5;
             size_t pending_state_limit = 500;
             int anonymizer_workers = 1;
 
-            DetectorModuleConfig detector;
+            PersonDetectorModuleConfig person_detector;
             TrackerModuleConfig tracker;
+            FaceDetectorModuleConfig face_detector;
+            FacePolicyConfig face_policy;
             RecognizerModuleConfig recognizer;
+            IdentityModuleConfig identity;
 
             std::string anonymizer_method = "pixelate";
             int anonymizer_pixelation_divisor = 10;
@@ -59,7 +68,6 @@ namespace veilsight {
         bool start() override;
         void stop() override;
         bool is_running() const override;
-        bool pop_tracker_output(TrackerFrameOutput& out, std::chrono::milliseconds timeout);
 
         ~PipelineRuntime();
 
@@ -67,46 +75,44 @@ namespace veilsight {
         struct StreamPipe {
             std::string stream_id;
 
-            BoundedQueue<FramePtr> inf_state_in;
-            BoundedQueue<InferResults> det_res;
-            BoundedQueue<FramePtr> recognizer_done;
-            BoundedQueue<FramePtr> enc_in;
-            std::unique_ptr<StreamInferenceState> inf_state;
-            std::map<int64_t, FramePtr> pending_recognized;
-            int64_t next_commit_frame_id = -1;
-            int64_t latest_queued_recognizer_frame_id = -1;
+            NamedQueue<FramePtr> frames_in;
+            NamedQueue<PersonDetectionResult> person_detections_in;
+            NamedQueue<FaceDetectionResult> faces_in;
+            NamedQueue<RecognitionResult> recognitions_in;
+            NamedQueue<IdentityResult> identities_in;
+            NamedQueue<AnonymizeResult> encoder_in;
+            std::unique_ptr<StreamCoordinator> coordinator;
 
             std::thread ingest_thr;
-            std::thread inf_state_thr;
+            std::thread coordinator_thr;
             std::thread enc_thr;
 
             StreamPipe(std::string id,
-                       size_t inf_state_cap,
-                       size_t det_res_queue_cap,
-                       size_t recognizer_done_cap,
-                       size_t enc_cap)
-                : stream_id(std::move(id)),
-                  inf_state_in(inf_state_cap),
-                  det_res(det_res_queue_cap),
-                  recognizer_done(recognizer_done_cap),
-                  enc_in(enc_cap) {}
+                       size_t frames_cap,
+                       size_t person_detections_cap,
+                       size_t faces_cap,
+                       size_t recognitions_cap,
+                       size_t identities_cap,
+                       size_t encoder_cap);
         };
 
-        struct DetectorStage;
+        struct PersonDetectorStage;
+        struct FaceDetectorStage;
         struct RecognizerStage;
+        struct IdentityStage;
 
         void ingest_loop_(const IngestConfig& cfg, std::unique_ptr<GstDualSource> src, StreamPipe* pipe);
-        void infer_state_loop_(StreamPipe* pipe);
+        void coordinator_loop_(StreamPipe* pipe);
         void anonymizer_loop_();
         void encoder_loop_(StreamPipe* pipe);
         void metrics_loop_();
 
-        void enqueue_recognizer_(StreamPipe* pipe, const FramePtr& frame);
-        void publish_recognized_frame_(const FramePtr& frame);
-        void drain_recognized_ready_(StreamPipe* pipe);
+        void publish_identity_result_(IdentityResult result);
         void commit_frame_(const FramePtr& frame);
-        bool validate_thread_budget_(const IDetectorFactory& detector_factory,
-                                     const IRecognizerFactory& recognizer_factory) const;
+        bool validate_thread_budget_(const IPersonDetectorFactory& detector_factory,
+                                     const IFaceDetectorFactory* face_detector_factory,
+                                     const IRecognizerFactory& recognizer_factory,
+                                     const IIdentityDeciderFactory& identity_factory) const;
 
         void anonymize_(cv::Mat& ui_frame,
                         const std::vector<Box>& boxes,
@@ -120,7 +126,7 @@ namespace veilsight {
                           float sy,
                           float tx,
                           float ty);
-        void publish_tracker_output_(const FrameCtx& ctx, const std::vector<Box>& tracks);
+        void publish_frame_analytics_(const FrameCtx& ctx, const std::vector<Box>& tracks);
         std::map<std::string, QueueSnapshot> snapshot_queues_() const;
 
         IStreamPublisher& stream_publisher_;
@@ -129,13 +135,14 @@ namespace veilsight {
         Options opt_;
 
         std::atomic<bool> running_{false};
-        BoundedQueue<FramePtr> anon_in_;
-        BoundedQueue<TrackerFrameOutput> analytics_out_;
+        NamedQueue<AnonymizeTask> anonymizer_in_;
 
         std::vector<std::unique_ptr<StreamPipe>> pipes_;
         std::unordered_map<std::string, StreamPipe*> pipes_by_stream_id_;
-        std::unique_ptr<DetectorStage> detector_stage_;
+        std::unique_ptr<PersonDetectorStage> person_detector_stage_;
+        std::unique_ptr<FaceDetectorStage> face_detector_stage_;
         std::unique_ptr<RecognizerStage> recognizer_stage_;
+        std::unique_ptr<IdentityStage> identity_stage_;
         std::vector<std::thread> anonymizer_pool_;
         std::thread metrics_thr_;
 

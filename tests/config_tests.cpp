@@ -3,6 +3,7 @@
 #include <streaming/webrtc_publisher.hpp>
 
 #include <chrono>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -35,6 +36,21 @@ namespace {
         return path.string();
     }
 
+    std::filesystem::path find_repo_file(const std::filesystem::path& relative) {
+        namespace fs = std::filesystem;
+        fs::path dir = fs::current_path();
+        for (int i = 0; i < 8; ++i) {
+            const fs::path candidate = dir / relative;
+            if (fs::exists(candidate)) return candidate;
+            if (!dir.has_parent_path()) break;
+            dir = dir.parent_path();
+        }
+
+        const fs::path source_relative = fs::path(__FILE__).parent_path().parent_path() / relative;
+        if (fs::exists(source_relative)) return source_relative;
+        return relative;
+    }
+
     bool load_throws(const std::string& yaml) {
         const std::string path = write_yaml_file("veilsight_cfg", yaml);
         try {
@@ -45,6 +61,28 @@ namespace {
             std::filesystem::remove(path);
             return true;
         }
+    }
+
+    std::string minimal_config_yaml(const std::string& extra) {
+        return
+            "server:\n"
+            "  host: \"0.0.0.0\"\n"
+            "  port: 8080\n" +
+            extra +
+            "streams:\n"
+            "  - id: \"file0\"\n"
+            "    type: \"file\"\n"
+            "    file:\n"
+            "      path: \"/tmp/test.mp4\"\n"
+            "    outputs:\n"
+            "      fps: 12\n"
+            "      profiles:\n"
+            "        inference:\n"
+            "          width: 640\n"
+            "          height: 640\n"
+            "        ui:\n"
+            "          width: 1280\n"
+            "          height: 720\n";
     }
 
     void test_expand_replicas_fills_missing_ids() {
@@ -246,7 +284,7 @@ namespace {
             "  host: \"0.0.0.0\"\n"
             "  port: 8080\n"
             "modules:\n"
-            "  detector:\n"
+            "  person_detector:\n"
             "    type: \"yolox\"\n"
             "    workers: 2\n"
             "    yolox:\n"
@@ -283,14 +321,14 @@ namespace {
         const auto cfg = veilsight::load_config_yaml(path);
         std::filesystem::remove(path);
 
-        check(cfg.modules.detector.type == "yolox", "detector.type should parse yolox");
-        check(cfg.modules.detector.yolox.variant == "tiny", "yolox.variant should parse");
-        check(cfg.modules.detector.yolox.param_path == "models/detector/bytetrack_tiny.ncnn.param",
+        check(cfg.modules.person_detector.type == "yolox", "detector.type should parse yolox");
+        check(cfg.modules.person_detector.yolox.variant == "tiny", "yolox.variant should parse");
+        check(cfg.modules.person_detector.yolox.param_path == "models/detector/bytetrack_tiny.ncnn.param",
               "yolox.param_path should parse");
-        check(cfg.modules.detector.yolox.bin_path == "models/detector/bytetrack_tiny.ncnn.bin",
+        check(cfg.modules.person_detector.yolox.bin_path == "models/detector/bytetrack_tiny.ncnn.bin",
               "yolox.bin_path should parse");
-        check(cfg.modules.detector.yolox.class_id == 3, "yolox.class_id should parse");
-        check(cfg.modules.detector.yolox.ncnn_threads == 4, "yolox.ncnn_threads should parse");
+        check(cfg.modules.person_detector.yolox.class_id == 3, "yolox.class_id should parse");
+        check(cfg.modules.person_detector.yolox.ncnn_threads == 4, "yolox.ncnn_threads should parse");
         check(cfg.modules.tracker.bytetrack.min_box_area == 144.0f, "bytetrack min_box_area should parse");
         check(cfg.modules.tracker.bytetrack.scene_grid.rows == 5, "scene_grid rows should parse");
         check(cfg.modules.tracker.bytetrack.scene_grid.cols == 7, "scene_grid cols should parse");
@@ -304,7 +342,7 @@ namespace {
             "  host: \"0.0.0.0\"\n"
             "  port: 8080\n"
             "modules:\n"
-            "  detector:\n"
+            "  person_detector:\n"
             "    yolox:\n"
             "      person_class_id: 2\n"
             "streams:\n"
@@ -326,7 +364,351 @@ namespace {
         const auto cfg = veilsight::load_config_yaml(path);
         std::filesystem::remove(path);
 
-        check(cfg.modules.detector.yolox.class_id == 2, "person_class_id should remain an alias for class_id");
+        check(cfg.modules.person_detector.yolox.class_id == 2, "person_class_id should remain an alias for class_id");
+    }
+
+    void test_face_detector_recognizer_identity_config_parses() {
+        const std::string yaml =
+            "server:\n"
+            "  host: \"0.0.0.0\"\n"
+            "  port: 8080\n"
+            "modules:\n"
+            "  person_detector:\n"
+            "    type: \"yolox\"\n"
+            "    workers: 3\n"
+            "    yolox:\n"
+            "      ncnn_threads: 2\n"
+            "  face_detector:\n"
+            "    enabled: true\n"
+            "    type: \"scrfd\"\n"
+            "    workers: 2\n"
+            "    scrfd:\n"
+            "      variant: \"500m_landmarks\"\n"
+            "      score_threshold: 0.45\n"
+            "      nms_threshold: 0.30\n"
+            "      top_k: 100\n"
+            "      ncnn_threads: 1\n"
+            "  face_policy:\n"
+            "    mode: \"hybrid\"\n"
+            "    full_frame_interval: 30\n"
+            "    max_roi_probes_per_frame: 2\n"
+            "    refresh_interval: 15\n"
+            "    reuse_ttl: 45\n"
+            "  recognizer:\n"
+            "    type: \"noop\"\n"
+            "    workers: 9\n"
+            "    gallery_path: \"/legacy/gallery\"\n"
+            "  identity:\n"
+            "    type: \"noop\"\n"
+            "    workers: 4\n"
+            "    gallery_path: \"/identity/gallery\"\n"
+            "streams:\n"
+            "  - id: \"file0\"\n"
+            "    type: \"file\"\n"
+            "    file:\n"
+            "      path: \"/tmp/test.mp4\"\n"
+            "    outputs:\n"
+            "      fps: 12\n"
+            "      profiles:\n"
+            "        inference:\n"
+            "          width: 640\n"
+            "          height: 640\n"
+            "        ui:\n"
+            "          width: 1280\n"
+            "          height: 720\n";
+
+        const std::string path = write_yaml_file("veilsight_face_recognizer_cfg_ok", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        check(cfg.modules.person_detector.workers == 3, "person detector worker count should parse independently");
+        check(cfg.modules.person_detector.yolox.ncnn_threads == 2,
+              "person detector internal threads should parse independently");
+        check(cfg.modules.recognizer.type == "noop", "recognizer.type should parse noop");
+        check(cfg.modules.recognizer.workers == 9, "recognizer worker count should parse");
+        check(cfg.modules.recognizer.gallery_path == "/legacy/gallery",
+              "recognizer.gallery_path should parse without mapping into identity");
+        check(cfg.modules.face_detector.type == "scrfd", "face detector type should parse");
+        check(cfg.modules.face_detector.workers == 2,
+              "face detector worker count should parse independently");
+        check(cfg.modules.face_detector.scrfd.variant == "500m_landmarks",
+              "face SCRFD variant should parse");
+        check(cfg.modules.face_detector.scrfd.ncnn_threads == 1,
+              "face detector internal threads should parse independently");
+        check(cfg.modules.face_detector.scrfd.param_path.find("scrfd_500m_landmarks") != std::string::npos,
+              "face SCRFD variant should select landmark model paths");
+        check(cfg.modules.face_detector.scrfd.top_k == 100, "face SCRFD top_k should parse");
+        check(cfg.modules.face_policy.full_frame_interval == 30,
+              "face policy full_frame_interval should parse");
+        check(cfg.modules.face_policy.max_roi_probes_per_frame == 2,
+              "face policy ROI budget should parse");
+        check(cfg.modules.identity.type == "noop", "identity.type should parse noop");
+        check(cfg.modules.identity.workers == 4, "identity worker count should parse");
+        check(cfg.modules.identity.gallery_path == "/identity/gallery",
+              "identity.gallery_path should not inherit recognizer.gallery_path");
+    }
+
+    void test_scrfd_variant_aliases_resolve() {
+        struct Case {
+            std::string alias;
+            std::string canonical;
+            std::string path_fragment;
+        };
+        const std::vector<Case> cases = {
+            {"2.5g", "25g", "scrfd_25g"},
+            {"25g", "25g", "scrfd_25g"},
+            {"2.5g_landmarks", "25g_landmarks", "scrfd_25g_landmarks"},
+            {"25g_landmarks", "25g_landmarks", "scrfd_25g_landmarks"},
+            {"500m_landmarks", "500m_landmarks", "scrfd_500m_landmarks"},
+            {"10g", "10g", "scrfd_10g"},
+        };
+
+        for (const auto& c : cases) {
+            const std::string yaml =
+                "server:\n"
+                "  host: \"0.0.0.0\"\n"
+                "  port: 8080\n"
+                "modules:\n"
+                "  person_detector:\n"
+                "    scrfd:\n"
+                "      variant: \"" + c.alias + "\"\n"
+                "streams:\n"
+                "  - id: \"file0\"\n"
+                "    type: \"file\"\n"
+                "    file:\n"
+                "      path: \"/tmp/test.mp4\"\n"
+                "    outputs:\n"
+                "      fps: 12\n"
+                "      profiles:\n"
+                "        inference:\n"
+                "          width: 640\n"
+                "          height: 640\n"
+                "        ui:\n"
+                "          width: 1280\n"
+                "          height: 720\n";
+
+            const std::string path = write_yaml_file("veilsight_scrfd_alias_cfg_ok", yaml);
+            const auto cfg = veilsight::load_config_yaml(path);
+            std::filesystem::remove(path);
+
+            check(cfg.modules.person_detector.scrfd.variant == c.canonical,
+                  "SCRFD alias should canonicalize: " + c.alias);
+            check(cfg.modules.person_detector.scrfd.param_path.find(c.path_fragment) != std::string::npos,
+                  "SCRFD alias should select param path: " + c.alias);
+            check(cfg.modules.person_detector.scrfd.bin_path.find(c.path_fragment) != std::string::npos,
+                  "SCRFD alias should select bin path: " + c.alias);
+        }
+    }
+
+    void test_full_reference_config_loads() {
+        const auto path = find_repo_file("configs/full_reference.yaml");
+        const auto cfg = veilsight::load_config_yaml(path.string());
+
+        check(cfg.streams.size() == 1, "full_reference should configure exactly one active stream");
+        check(cfg.streams[0].id == "file0", "full_reference active stream should be file0");
+        check(cfg.streams[0].type == "file", "full_reference active stream should be a file stream");
+        check(cfg.modules.person_detector.type == "yolox", "modules.person_detector should parse into detector config");
+        check(cfg.modules.person_detector.workers == 2, "person_detector.model_instances should parse");
+        check(cfg.modules.face_detector.type == "scrfd",
+              "modules.face_detector should parse into face detector config");
+        check(cfg.modules.face_detector.workers == 2,
+              "face_detector.model_instances should parse");
+        check(cfg.modules.face_policy.full_frame_interval == 30,
+              "face_policy.full_frame_interval should parse");
+        check(cfg.modules.recognizer.type == "noop", "modules.recognizer should parse noop");
+        check(cfg.runtime.queues.global.person_detector_in_capacity == 50,
+              "runtime global person detector queue capacity should parse");
+        check(cfg.runtime.queues.global.recognizer_in_capacity == 50,
+              "runtime global recognizer queue capacity should parse");
+        check(cfg.runtime.queues.per_stream.recognitions_in_capacity == 20,
+              "runtime per-stream recognitions queue capacity should parse");
+        check(cfg.runtime.queues.per_stream.encoder_in_capacity == 5,
+              "runtime per-stream encoder queue capacity should parse");
+        check(cfg.runtime.anonymizer.model_instances == 1,
+              "runtime anonymizer model_instances should parse");
+        check(cfg.runtime.anonymizer.method == "pixelate",
+              "runtime anonymizer method should parse");
+    }
+
+    void test_model_instances_aliases_workers() {
+        const std::string preferred_yaml = minimal_config_yaml(
+            "modules:\n"
+            "  person_detector:\n"
+            "    type: \"yolox\"\n"
+            "    workers: 1\n"
+            "    model_instances: 3\n");
+        const std::string preferred_path = write_yaml_file("veilsight_model_instances", preferred_yaml);
+        const auto preferred_cfg = veilsight::load_config_yaml(preferred_path);
+        std::filesystem::remove(preferred_path);
+        check(preferred_cfg.modules.person_detector.workers == 3,
+              "person_detector.model_instances should win over workers");
+
+        const std::string workers_yaml = minimal_config_yaml(
+            "modules:\n"
+            "  person_detector:\n"
+            "    type: \"yolox\"\n"
+            "    workers: 2\n");
+        const std::string workers_path = write_yaml_file("veilsight_workers_alias", workers_yaml);
+        const auto workers_cfg = veilsight::load_config_yaml(workers_path);
+        std::filesystem::remove(workers_path);
+        check(workers_cfg.modules.person_detector.workers == 2,
+              "person_detector.workers should still parse");
+    }
+
+    void test_face_detector_top_level_config_parses() {
+        const std::string yaml = minimal_config_yaml(
+            "modules:\n"
+            "  face_detector:\n"
+            "    enabled: true\n"
+            "    type: \"scrfd\"\n"
+            "    model_instances: 3\n"
+            "    scrfd:\n"
+            "      variant: \"25g_landmarks\"\n"
+            "      ncnn_threads: 2\n"
+            "  face_policy:\n"
+            "    mode: \"hybrid\"\n"
+            "    full_frame_interval: 11\n");
+
+        const std::string path = write_yaml_file("veilsight_face_top_level", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        check(cfg.modules.face_detector.type == "scrfd", "top-level face detector type should parse");
+        check(cfg.modules.face_detector.workers == 3,
+              "top-level face_detector.model_instances should parse");
+        check(cfg.modules.face_detector.scrfd.variant == "25g_landmarks",
+              "top-level face detector SCRFD variant should parse");
+        check(cfg.modules.face_detector.scrfd.ncnn_threads == 2,
+              "top-level face detector ncnn_threads should parse");
+        check(cfg.modules.face_policy.full_frame_interval == 11,
+              "top-level face detector policy should parse");
+    }
+
+    void test_face_detector_can_be_disabled() {
+        const std::string yaml = minimal_config_yaml(
+            "modules:\n"
+            "  face_detector:\n"
+            "    enabled: false\n"
+            "    type: \"scrfd\"\n"
+            "    model_instances: 2\n");
+
+        const std::string path = write_yaml_file("veilsight_face_disabled", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        check(cfg.modules.face_detector.type == "none",
+              "disabled top-level face_detector should set detector type to none");
+        check(cfg.modules.recognizer.type == "noop",
+              "disabled top-level face_detector should not alter recognizer config");
+    }
+
+    void test_legacy_inference_config_paths_are_rejected() {
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  detector:\n"
+                  "    type: \"yolox\"\n")),
+              "legacy modules.detector should be unsupported");
+
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  recognizer:\n"
+                  "    face:\n"
+                  "      detector:\n"
+                  "        type: \"scrfd\"\n")),
+              "legacy modules.recognizer.face should be unsupported");
+    }
+
+    void test_runtime_config_parses() {
+        const std::string yaml = minimal_config_yaml(
+            "runtime:\n"
+            "  reorder_window: 7\n"
+            "  pending_state_limit: 333\n"
+            "  jpeg_quality: 81\n"
+            "  queues:\n"
+            "    global:\n"
+            "      person_detector_in_capacity: 51\n"
+            "      face_detector_in_capacity: 52\n"
+            "      recognizer_in_capacity: 53\n"
+            "      identity_in_capacity: 54\n"
+            "      anonymizer_in_capacity: 55\n"
+            "    per_stream:\n"
+            "      frames_in_capacity: 6\n"
+            "      person_detections_in_capacity: 21\n"
+            "      faces_in_capacity: 22\n"
+            "      recognitions_in_capacity: 23\n"
+            "      identities_in_capacity: 24\n"
+            "      encoder_in_capacity: 7\n"
+            "  anonymizer:\n"
+            "    model_instances: 4\n"
+            "    method: \"blur\"\n"
+            "    pixelation_divisor: 12\n"
+            "    blur_kernel: 33\n");
+
+        const std::string path = write_yaml_file("veilsight_runtime", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        check(cfg.runtime.reorder_window == 7, "runtime.reorder_window should parse");
+        check(cfg.runtime.pending_state_limit == 333, "runtime.pending_state_limit should parse");
+        check(cfg.runtime.jpeg_quality == 81, "runtime.jpeg_quality should parse");
+        check(cfg.runtime.queues.global.person_detector_in_capacity == 51,
+              "runtime person_detector_in_capacity should parse");
+        check(cfg.runtime.queues.global.face_detector_in_capacity == 52,
+              "runtime face_detector_in_capacity should parse");
+        check(cfg.runtime.queues.global.recognizer_in_capacity == 53,
+              "runtime recognizer_in_capacity should parse");
+        check(cfg.runtime.queues.global.identity_in_capacity == 54,
+              "runtime identity_in_capacity should parse");
+        check(cfg.runtime.queues.global.anonymizer_in_capacity == 55,
+              "runtime anonymizer_in_capacity should parse");
+        check(cfg.runtime.queues.per_stream.frames_in_capacity == 6,
+              "runtime frames_in_capacity should parse");
+        check(cfg.runtime.queues.per_stream.person_detections_in_capacity == 21,
+              "runtime person_detections_in_capacity should parse");
+        check(cfg.runtime.queues.per_stream.faces_in_capacity == 22,
+              "runtime faces_in_capacity should parse");
+        check(cfg.runtime.queues.per_stream.recognitions_in_capacity == 23,
+              "runtime recognitions_in_capacity should parse");
+        check(cfg.runtime.queues.per_stream.identities_in_capacity == 24,
+              "runtime identities_in_capacity should parse");
+        check(cfg.runtime.queues.per_stream.encoder_in_capacity == 7,
+              "runtime encoder_in_capacity should parse");
+        check(cfg.runtime.anonymizer.model_instances == 4,
+              "runtime anonymizer.model_instances should parse");
+        check(cfg.runtime.anonymizer.method == "blur", "runtime anonymizer.method should parse");
+        check(cfg.runtime.anonymizer.pixelation_divisor == 12,
+              "runtime anonymizer.pixelation_divisor should parse");
+        check(cfg.runtime.anonymizer.blur_kernel == 33,
+              "runtime anonymizer.blur_kernel should parse");
+    }
+
+    void test_runtime_config_rejects_invalid_values() {
+        check(load_throws(minimal_config_yaml(
+                  "runtime:\n"
+                  "  queues:\n"
+                  "    global:\n"
+                  "      person_detector_in_capacity: 0\n")),
+              "runtime queue capacities must reject zero");
+        check(load_throws(minimal_config_yaml(
+                  "runtime:\n"
+                  "  jpeg_quality: 0\n")),
+              "runtime.jpeg_quality must reject zero");
+        check(load_throws(minimal_config_yaml(
+                  "runtime:\n"
+                  "  jpeg_quality: 101\n")),
+              "runtime.jpeg_quality must reject values above 100");
+        check(load_throws(minimal_config_yaml(
+                  "runtime:\n"
+                  "  anonymizer:\n"
+                  "    method: \"mask\"\n")),
+              "runtime.anonymizer.method must reject unknown methods");
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  person_detector:\n"
+                  "    type: \"yolox\"\n"
+                  "    yolox:\n"
+                  "      ncnn_threads: 0\n")),
+              "internal model thread counts must reject zero");
     }
 }
 
@@ -341,6 +723,15 @@ int main() {
     test_h264_encoder_selector();
     test_person_detector_and_scene_grid_config();
     test_legacy_person_class_id_alias();
+    test_face_detector_recognizer_identity_config_parses();
+    test_scrfd_variant_aliases_resolve();
+    test_full_reference_config_loads();
+    test_model_instances_aliases_workers();
+    test_face_detector_top_level_config_parses();
+    test_face_detector_can_be_disabled();
+    test_legacy_inference_config_paths_are_rejected();
+    test_runtime_config_parses();
+    test_runtime_config_rejects_invalid_values();
 
     if (g_failures != 0) {
         std::cerr << "[FAIL] total failures: " << g_failures << "\n";

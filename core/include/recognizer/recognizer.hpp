@@ -1,16 +1,15 @@
 #pragma once
 
 #include <common/config.hpp>
-#include <pipeline/types.hpp>
+#include <pipeline/tasks.hpp>
 
 #include <memory>
-#include <vector>
 
 namespace veilsight {
     class IRecognizer {
     public:
         virtual ~IRecognizer() = default;
-        virtual void annotate(FrameCtx& frame, std::vector<Box>& tracks) = 0;
+        virtual RecognitionResult recognize(const RecognitionTask& task) = 0;
     };
 
     class IRecognizerFactory {

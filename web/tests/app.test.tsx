@@ -91,13 +91,29 @@ function snapshot(stream_id: string, frame_id = 5, rules: any[] = []) {
   };
 }
 
-function mockFetch(streams = [stream("cam0")]) {
+function mockFetch(streams = [stream("cam0")], metrics: Record<string, unknown> = {}) {
+  let config = { path: "/tmp/config.yaml", yaml_text: "streams: []" };
+  const files = [
+    { path: "/tmp/config.yaml", name: "config.yaml" },
+    { path: "/tmp/alternate.yaml", name: "alternate.yaml" }
+  ];
   return vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/api/streams") return Response.json({ public_base_url: "http://localhost:8080", streams });
-    if (url === "/api/config") return Response.json({ path: "/tmp/config.yaml", yaml_text: "streams: []" });
+    if (url === "/api/config") return Response.json(config);
+    if (url === "/api/configs") {
+      return Response.json({
+        active_path: config.path,
+        files: files.map((file) => ({ ...file, active: file.path === config.path }))
+      });
+    }
+    if (url === "/api/config/select" && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      config = { path: body.path, yaml_text: "streams:\n  - id: alternate" };
+      return Response.json(config);
+    }
     if (url === "/api/pipeline/status") return Response.json({ state: "stopped" });
     if (url === "/api/health") return Response.json({ ok: true, connection_state: "connected", runner: { ok: true } });
-    if (url === "/api/metrics") return Response.json({});
+    if (url === "/api/metrics") return Response.json(metrics);
     if (url === "/api/pipeline/start") return Response.json({ accepted: true, status: { state: "running" } });
     if (url === "/api/analytics/rules" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
@@ -139,6 +155,20 @@ describe("dashboard", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/pipeline/start", { method: "POST" }));
   });
 
+  it("loads a selected config file into the editor", async () => {
+    const fetchMock = mockFetch();
+    global.fetch = fetchMock as any;
+
+    render(<App />);
+
+    const selector = (await screen.findByLabelText("Config file")) as HTMLSelectElement;
+    await userEvent.selectOptions(selector, "/tmp/alternate.yaml");
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/config/select", expect.objectContaining({ method: "POST" })));
+    expect((screen.getByLabelText("Config file") as HTMLSelectElement).value).toBe("/tmp/alternate.yaml");
+    await waitFor(() => expect((screen.getByLabelText("Config YAML") as HTMLTextAreaElement).value).toBe("streams:\n  - id: alternate"));
+  });
+
   it("focuses a clicked stream thumbnail", async () => {
     global.fetch = mockFetch([stream("cam0"), stream("cam1")]) as any;
     const { container } = render(<App />);
@@ -146,6 +176,33 @@ describe("dashboard", () => {
     expect(await screen.findByText("cam1/ui")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /cam1\/ui/ }));
     expect(container.querySelector(".focused-stream header strong")?.textContent).toBe("cam1/ui");
+  });
+
+  it("filters queue rows to the selected stream and exposes face overlays", async () => {
+    global.fetch = mockFetch(
+      [stream("file0_0"), stream("file0_1")],
+      {
+        queues: [
+          { name: "global/person_detector.in", size: 1, capacity: 50, dropped: 0, producer: "Ingestor", consumer: "PersonDetectorPool" },
+          { name: "stream/file0_0/frames.in", size: 2, capacity: 50, dropped: 0, producer: "Ingestor", consumer: "StreamCoordinator" },
+          { name: "stream/file0_1/frames.in", size: 3, capacity: 50, dropped: 0, producer: "Ingestor", consumer: "StreamCoordinator" }
+        ]
+      }
+    ) as any;
+
+    render(<App />);
+
+    expect(await screen.findByText("file0_0/ui")).toBeInTheDocument();
+    expect(screen.getByText("global/person_detector.in")).toBeInTheDocument();
+    expect(screen.getByText("stream/file0_0/frames.in")).toBeInTheDocument();
+    expect(screen.queryByText("stream/file0_1/frames.in")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Ingestor -> StreamCoordinator").length).toBeGreaterThan(0);
+    expect((screen.getByLabelText("Faces") as HTMLInputElement).checked).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: /file0_1\/ui/ }));
+
+    expect(screen.getByText("stream/file0_1/frames.in")).toBeInTheDocument();
+    expect(screen.queryByText("stream/file0_0/frames.in")).not.toBeInTheDocument();
   });
 
   it("attaches streamless WebRTC tracks to the video element", async () => {

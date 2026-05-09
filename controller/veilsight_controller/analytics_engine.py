@@ -14,6 +14,7 @@ from .analytics_models import (
     Counts,
     DensityLayer,
     DirectionVector,
+    FaceObservation,
     HeatmapLayer,
     Point,
     Rect,
@@ -90,6 +91,37 @@ def now_ms() -> int:
 
 def distance(a: Point, b: Point) -> float:
     return math.hypot(a.x - b.x, a.y - b.y)
+
+
+def parse_face_observation(raw: Any) -> FaceObservation | None:
+    if not isinstance(raw, dict):
+        return None
+    raw_bbox = raw.get("bbox")
+    if not isinstance(raw_bbox, dict):
+        return None
+
+    bbox = Rect(
+        x=float(raw_bbox.get("x") or 0.0),
+        y=float(raw_bbox.get("y") or 0.0),
+        w=float(raw_bbox.get("w") or 0.0),
+        h=float(raw_bbox.get("h") or 0.0),
+    )
+    landmarks: list[Point] = []
+    raw_landmarks = raw.get("landmarks") if isinstance(raw.get("landmarks"), list) else []
+    for item in raw_landmarks:
+        if not isinstance(item, dict):
+            continue
+        landmarks.append(Point(x=float(item.get("x") or 0.0), y=float(item.get("y") or 0.0)))
+
+    return FaceObservation(
+        bbox=bbox,
+        landmarks=landmarks,
+        landmark_count=int(raw.get("landmark_count") or len(landmarks)),
+        score=float(raw.get("score") or 0.0),
+        frame_id=int(raw.get("frame_id") or 0),
+        source=str(raw.get("source") or ""),
+        fresh=bool(raw.get("fresh", False)),
+    )
 
 
 def side_of_line(a: Point, b: Point, p: Point) -> float:
@@ -330,6 +362,7 @@ class AnalyticsEngine:
                     foot=foot,
                     dwell_s=round(previous.dwell_s, 3),
                     velocity_px_s=round(velocity_px_s, 3),
+                    face=parse_face_observation(track.get("face")),
                 )
             )
 

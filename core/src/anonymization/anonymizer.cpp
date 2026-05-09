@@ -39,6 +39,7 @@ namespace veilsight {
         if (ui_frame.empty()) return;
 
         for (const auto& b : boxes_inf_space) {
+            if (b.privacy_action != "anonymize") continue;
             if (b.w <= 1.0f || b.h <= 1.0f) continue;
 
             const cv::Rect roi_rect =

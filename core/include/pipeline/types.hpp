@@ -1,12 +1,42 @@
 #pragma once
 
 #include <opencv2/core.hpp>
+#include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace veilsight {
+    struct PointF {
+        float x = 0.0f;
+        float y = 0.0f;
+    };
+
+    struct RectF {
+        float x = 0.0f;
+        float y = 0.0f;
+        float w = 0.0f;
+        float h = 0.0f;
+    };
+
+    enum class FaceSource {
+        FullFrame,
+        PersonRoi,
+        Predicted
+    };
+
+    struct FaceObservation {
+        RectF bbox;
+        std::array<PointF, 5> landmarks;
+        int landmark_count = 0;
+        float score = 0.0f;
+        int64_t frame_id = 0;
+        FaceSource source = FaceSource::PersonRoi;
+        bool fresh = false;
+    };
+
     struct Box {
         float x = 0.0f;
         float y = 0.0f;
@@ -18,6 +48,7 @@ namespace veilsight {
         std::string identity_key = "";
         float identity_confidence = 0.0f;
         std::string privacy_action = "anonymize";
+        std::optional<FaceObservation> face;
     };
 
     struct FrameCtx {
@@ -45,18 +76,4 @@ namespace veilsight {
 
     using FramePtr = std::shared_ptr<FrameCtx>;
 
-    struct InferResults {
-        std::string stream_id;
-        int64_t frame_id = 0;
-        std::vector<Box> bboxes;
-    };
-
-    struct TrackerFrameOutput {
-        std::string stream_id;
-        int64_t frame_id = 0;
-        int64_t pts_ns = 0;
-        int width = 0;
-        int height = 0;
-        std::vector<Box> tracks;
-    };
 }

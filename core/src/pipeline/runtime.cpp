@@ -20,32 +20,135 @@ namespace veilsight {
                     .count());
         }
 
+        int identity_worker_count(const IdentityModuleConfig& cfg) {
+            return std::max(1, cfg.workers);
+        }
+
+        bool face_pipeline_enabled(const FaceDetectorModuleConfig& cfg) {
+            return cfg.type != "none";
+        }
+
+        int recognizer_worker_count(const RecognizerModuleConfig& cfg) {
+            return std::max(1, cfg.workers);
+        }
+
         Box map_box_to_ui(const Box& box, const FrameCtx& frame) {
             Box out = box;
             out.x = box.x * frame.scale_x + frame.offset_x;
             out.y = box.y * frame.scale_y + frame.offset_y;
             out.w = box.w * frame.scale_x;
             out.h = box.h * frame.scale_y;
+            if (out.face) {
+                out.face->bbox.x = box.face->bbox.x * frame.scale_x + frame.offset_x;
+                out.face->bbox.y = box.face->bbox.y * frame.scale_y + frame.offset_y;
+                out.face->bbox.w = box.face->bbox.w * frame.scale_x;
+                out.face->bbox.h = box.face->bbox.h * frame.scale_y;
+                for (int i = 0; i < out.face->landmark_count && i < 5; ++i) {
+                    out.face->landmarks[static_cast<size_t>(i)].x =
+                        box.face->landmarks[static_cast<size_t>(i)].x * frame.scale_x + frame.offset_x;
+                    out.face->landmarks[static_cast<size_t>(i)].y =
+                        box.face->landmarks[static_cast<size_t>(i)].y * frame.scale_y + frame.offset_y;
+                }
+            }
             return out;
+        }
+
+        void add_queue_snapshot(std::map<std::string, QueueSnapshot>& out, const QueueSnapshot& snapshot, const std::string& name) {
+            out[name] = snapshot;
         }
     }
 
-    struct PipelineRuntime::DetectorStage {
-        explicit DetectorStage(size_t input_cap, std::unique_ptr<IDetectorFactory> stage_factory)
-            : input(input_cap),
+    PipelineRuntime::StreamPipe::StreamPipe(std::string id,
+                                            size_t frames_cap,
+                                            size_t person_detections_cap,
+                                            size_t faces_cap,
+                                            size_t recognitions_cap,
+                                            size_t identities_cap,
+                                            size_t encoder_cap)
+        : stream_id(std::move(id)),
+          frames_in("stream/" + stream_id + "/frames.in",
+                    "Ingestor",
+                    "StreamCoordinator",
+                    "Original FrameCtx with UI and inference mats.",
+                    frames_cap),
+          person_detections_in("stream/" + stream_id + "/person_detections.in",
+                               "PersonDetectorPool",
+                               "StreamCoordinator",
+                               "Person detector results keyed by frame_id.",
+                               person_detections_cap),
+          faces_in("stream/" + stream_id + "/faces.in",
+                   "FaceDetectorPool",
+                   "StreamCoordinator",
+                   "Face probe results keyed by frame_id and probe_id.",
+                   faces_cap),
+          recognitions_in("stream/" + stream_id + "/recognitions.in",
+                          "RecognizerPool",
+                          "StreamCoordinator",
+                          "Recognition results keyed by frame_id.",
+                          recognitions_cap),
+          identities_in("stream/" + stream_id + "/identities.in",
+                        "IdentityDecisionPool",
+                        "StreamCoordinator",
+                        "Track privacy decisions. Currently all unknown/anonymize.",
+                        identities_cap),
+          encoder_in("stream/" + stream_id + "/encoder.in",
+                     "AnonymizerPool",
+                     "Encoder",
+                     "Final anonymized UI frame for publishing.",
+                     encoder_cap) {}
+
+    struct PipelineRuntime::PersonDetectorStage {
+        explicit PersonDetectorStage(size_t input_cap, std::unique_ptr<IPersonDetectorFactory> stage_factory)
+            : input("global/person_detector.in",
+                    "Ingestor",
+                    "PersonDetectorPool",
+                    "Shared people detector work from all streams.",
+                    input_cap),
               factory(std::move(stage_factory)) {}
 
-        BoundedQueue<FramePtr> input;
-        std::unique_ptr<IDetectorFactory> factory;
+        NamedQueue<PersonDetectionTask> input;
+        std::unique_ptr<IPersonDetectorFactory> factory;
+        std::vector<std::thread> workers;
+    };
+
+    struct PipelineRuntime::FaceDetectorStage {
+        explicit FaceDetectorStage(size_t input_cap, std::unique_ptr<IFaceDetectorFactory> stage_factory)
+            : input("global/face_detector.in",
+                    "StreamCoordinator",
+                    "FaceDetectorPool",
+                    "Full-frame or ROI face probes from all streams.",
+                    input_cap),
+              factory(std::move(stage_factory)) {}
+
+        NamedQueue<FaceDetectionTask> input;
+        std::unique_ptr<IFaceDetectorFactory> factory;
+        std::vector<std::thread> workers;
+    };
+
+    struct PipelineRuntime::IdentityStage {
+        explicit IdentityStage(size_t input_cap, std::unique_ptr<IIdentityDeciderFactory> stage_factory)
+            : input("global/identity.in",
+                    "StreamCoordinator",
+                    "IdentityDecisionPool",
+                    "Future gallery/embedding work; noop/fail-closed for now.",
+                    input_cap),
+              factory(std::move(stage_factory)) {}
+
+        NamedQueue<IdentityTask> input;
+        std::unique_ptr<IIdentityDeciderFactory> factory;
         std::vector<std::thread> workers;
     };
 
     struct PipelineRuntime::RecognizerStage {
         explicit RecognizerStage(size_t input_cap, std::unique_ptr<IRecognizerFactory> stage_factory)
-            : input(input_cap),
+            : input("global/recognizer.in",
+                    "StreamCoordinator",
+                    "RecognizerPool",
+                    "Embedding/face recognition work from all streams.",
+                    input_cap),
               factory(std::move(stage_factory)) {}
 
-        BoundedQueue<FramePtr> input;
+        NamedQueue<RecognitionTask> input;
         std::unique_ptr<IRecognizerFactory> factory;
         std::vector<std::thread> workers;
     };
@@ -58,8 +161,11 @@ namespace veilsight {
           telemetry_publisher_(telemetry_publisher),
           streams_(std::move(streams)),
           opt_(opt),
-          anon_in_(opt.anon_in_cap),
-          analytics_out_(opt.analytics_cap) {}
+          anonymizer_in_("global/anonymizer.in",
+                         "StreamCoordinator",
+                         "AnonymizerPool",
+                         "Shared anonymization work over UI frames.",
+                         opt.anonymizer_in_cap) {}
 
     PipelineRuntime::~PipelineRuntime() {
         stop();
@@ -68,19 +174,23 @@ namespace veilsight {
     bool PipelineRuntime::start() {
         if (running_) return true;
 
-        auto detector_factory = create_detector_factory(opt_.detector);
+        auto detector_factory = create_person_detector_factory(opt_.person_detector);
         auto tracker_factory = create_tracker_factory(opt_.tracker);
+        std::unique_ptr<IFaceDetectorFactory> face_detector_factory;
+        if (face_pipeline_enabled(opt_.face_detector)) {
+            face_detector_factory = create_face_detector_factory(opt_.face_detector);
+        }
         auto recognizer_factory = create_recognizer_factory(opt_.recognizer);
-        if (!detector_factory || !tracker_factory || !recognizer_factory) {
+        auto identity_factory = create_identity_decider_factory(opt_.identity);
+        if (!detector_factory || !tracker_factory || !recognizer_factory || !identity_factory) {
             std::cerr << "[Pipeline](start) failed to create stage factories.\n";
             return false;
         }
-        if (!validate_thread_budget_(*detector_factory, *recognizer_factory)) {
+        if (!validate_thread_budget_(*detector_factory, face_detector_factory.get(), *recognizer_factory, *identity_factory)) {
             return false;
         }
 
-        anon_in_.reset();
-        analytics_out_.reset();
+        anonymizer_in_.reset();
         if (opt_.metrics.enabled) {
             metrics_ = std::make_unique<RuntimeMetrics>();
         } else {
@@ -103,101 +213,218 @@ namespace veilsight {
         pipes_.clear();
         pipes_by_stream_id_.clear();
         pipes_.reserve(streams_.size());
+        const bool face_enabled = face_pipeline_enabled(opt_.face_detector) && face_detector_factory != nullptr;
         for (const auto& s : streams_) {
             auto pipe = std::make_unique<StreamPipe>(s.id,
-                                                     opt_.inf_state_in_cap,
-                                                     opt_.det_res_cap,
-                                                     opt_.recognizer_done_cap,
-                                                     opt_.enc_in_cap);
+                                                     opt_.frames_in_cap,
+                                                     opt_.person_detections_in_cap,
+                                                     opt_.faces_in_cap,
+                                                     opt_.recognitions_in_cap,
+                                                     opt_.identities_in_cap,
+                                                     opt_.encoder_in_cap);
             try {
-                pipe->inf_state = std::make_unique<StreamInferenceState>(
+                pipe->coordinator = std::make_unique<StreamCoordinator>(
                     tracker_factory->create(),
+                    opt_.face_policy,
+                    face_enabled,
                     opt_.reorder_window,
                     opt_.pending_state_limit);
             } catch (const std::exception& e) {
-                std::cerr << "[Pipeline](start) tracker init failed for " << s.id << ": " << e.what() << "\n";
+                std::cerr << "[Pipeline](start) stream coordinator init failed for " << s.id << ": " << e.what() << "\n";
                 continue;
             }
             pipes_by_stream_id_[s.id] = pipe.get();
             pipes_.push_back(std::move(pipe));
         }
 
-        detector_stage_ = std::make_unique<DetectorStage>(opt_.infer_in_cap, std::move(detector_factory));
+        person_detector_stage_ = std::make_unique<PersonDetectorStage>(opt_.person_detector_in_cap, std::move(detector_factory));
+        face_detector_stage_ = std::make_unique<FaceDetectorStage>(opt_.face_detector_in_cap, std::move(face_detector_factory));
         recognizer_stage_ = std::make_unique<RecognizerStage>(opt_.recognizer_in_cap, std::move(recognizer_factory));
+        identity_stage_ = std::make_unique<IdentityStage>(opt_.identity_in_cap, std::move(identity_factory));
 
         running_ = true;
         try {
-            detector_stage_->workers.clear();
-            detector_stage_->workers.reserve(std::max(1, opt_.detector.workers));
-            for (int i = 0; i < std::max(1, opt_.detector.workers); ++i) {
-                auto detector = detector_stage_->factory->create();
-                detector_stage_->workers.emplace_back([this, detector = std::move(detector)]() mutable {
+            person_detector_stage_->workers.clear();
+            person_detector_stage_->workers.reserve(std::max(1, opt_.person_detector.workers));
+            for (int i = 0; i < std::max(1, opt_.person_detector.workers); ++i) {
+                auto detector = person_detector_stage_->factory->create();
+                person_detector_stage_->workers.emplace_back([this, detector = std::move(detector)]() mutable {
                     while (running_.load(std::memory_order_relaxed)) {
-                        FramePtr ctx;
-                        if (!detector_stage_->input.pop_for(ctx, std::chrono::milliseconds(200))) continue;
-                        if (!ctx || !detector) continue;
+                        PersonDetectionTask task;
+                        if (!person_detector_stage_->input.pop_for(task, std::chrono::milliseconds(200))) continue;
+                        if (!detector) continue;
 
-                        InferResults res;
-                        res.stream_id = ctx->stream_id;
-                        res.frame_id = ctx->frame_id;
+                        PersonDetectionResult result;
+                        result.stream_id = task.stream_id;
+                        result.frame_id = task.frame_id;
                         bool ok = true;
-                        const uint64_t detector_t0_ns = steady_now_ns();
+                        const uint64_t t0_ns = steady_now_ns();
 
                         try {
-                            res.bboxes = detector->detect(ctx->inf);
+                            const auto boxes = detector->detect(task.input.image);
+                            result.boxes.reserve(boxes.size());
+                            for (const auto& box : boxes) {
+                                result.boxes.push_back(map_box(task.input.image_to_frame, box));
+                            }
                         } catch (const std::exception& e) {
                             ok = false;
                             thread_local bool logged = false;
                             if (!logged) {
-                                std::cerr << "[Pipeline](detector) detect failed: " << e.what() << "\n";
+                                std::cerr << "[Pipeline](person_detector) detect failed: " << e.what() << "\n";
                                 logged = true;
                             }
-                            res.bboxes.clear();
+                            result.boxes.clear();
                         }
 
                         if (metrics_) {
-                            const uint64_t dt_ns = steady_now_ns() - detector_t0_ns;
-                            metrics_->observe_global(RuntimeStage::Detector, dt_ns, ok);
-                            metrics_->observe_stream(ctx->stream_id, RuntimeStage::Detector, dt_ns, ok);
+                            const uint64_t dt_ns = steady_now_ns() - t0_ns;
+                            metrics_->observe_global(RuntimeStage::PersonDetector, dt_ns, ok);
+                            metrics_->observe_stream(task.stream_id, RuntimeStage::PersonDetector, dt_ns, ok);
                         }
 
-                        auto it = pipes_by_stream_id_.find(ctx->stream_id);
+                        auto it = pipes_by_stream_id_.find(task.stream_id);
                         if (it != pipes_by_stream_id_.end() && it->second) {
-                            it->second->det_res.push_drop_oldest(std::move(res));
+                            it->second->person_detections_in.push_drop_oldest(std::move(result));
                         }
                     }
                 });
             }
 
+            if (face_detector_stage_->factory) {
+                face_detector_stage_->workers.clear();
+                face_detector_stage_->workers.reserve(std::max(1, opt_.face_detector.workers));
+                for (int i = 0; i < std::max(1, opt_.face_detector.workers); ++i) {
+                    auto detector = face_detector_stage_->factory->create();
+                    face_detector_stage_->workers.emplace_back([this, detector = std::move(detector)]() mutable {
+                        while (running_.load(std::memory_order_relaxed)) {
+                            FaceDetectionTask task;
+                            if (!face_detector_stage_->input.pop_for(task, std::chrono::milliseconds(200))) continue;
+                            if (!detector) continue;
+
+                            FaceDetectionResult result;
+                            result.stream_id = task.stream_id;
+                            result.frame_id = task.frame_id;
+                            result.probe_id = task.probe_id;
+                            result.kind = task.kind;
+                            result.track_index = task.track_index;
+                            result.roi = task.roi;
+                            bool ok = true;
+                            const uint64_t t0_ns = steady_now_ns();
+
+                            try {
+                                const auto faces = detector->detect_faces(task.input.image, task.run);
+                                result.faces.reserve(faces.size());
+                                for (const auto& face : faces) {
+                                    result.faces.push_back(map_face(task.input.image_to_frame, face));
+                                }
+                            } catch (const std::exception& e) {
+                                ok = false;
+                                thread_local bool logged = false;
+                                if (!logged) {
+                                    std::cerr << "[Pipeline](face_detector) detect failed: " << e.what() << "\n";
+                                    logged = true;
+                                }
+                                result.faces.clear();
+                            }
+
+                            if (metrics_) {
+                                const uint64_t dt_ns = steady_now_ns() - t0_ns;
+                                metrics_->observe_global(RuntimeStage::FaceDetector, dt_ns, ok);
+                                metrics_->observe_stream(task.stream_id, RuntimeStage::FaceDetector, dt_ns, ok);
+                            }
+
+                            auto it = pipes_by_stream_id_.find(task.stream_id);
+                            if (it != pipes_by_stream_id_.end() && it->second) {
+                                it->second->faces_in.push_drop_oldest(std::move(result));
+                            }
+                        }
+                    });
+                }
+            }
+
             recognizer_stage_->workers.clear();
-            recognizer_stage_->workers.reserve(std::max(1, opt_.recognizer.workers));
-            for (int i = 0; i < std::max(1, opt_.recognizer.workers); ++i) {
+            const int recognizer_workers = recognizer_worker_count(opt_.recognizer);
+            recognizer_stage_->workers.reserve(recognizer_workers);
+            for (int i = 0; i < recognizer_workers; ++i) {
                 auto recognizer = recognizer_stage_->factory->create();
                 recognizer_stage_->workers.emplace_back([this, recognizer = std::move(recognizer)]() mutable {
                     while (running_.load(std::memory_order_relaxed)) {
-                        FramePtr ctx;
-                        if (!recognizer_stage_->input.pop_for(ctx, std::chrono::milliseconds(200))) continue;
-                        if (!ctx || !recognizer) continue;
+                        RecognitionTask task;
+                        if (!recognizer_stage_->input.pop_for(task, std::chrono::milliseconds(200))) continue;
+                        if (!recognizer) continue;
 
                         bool ok = true;
-                        const uint64_t recognizer_t0_ns = steady_now_ns();
+                        RecognitionResult result;
+                        const uint64_t t0_ns = steady_now_ns();
                         try {
-                            recognizer->annotate(*ctx, ctx->tracked_boxes);
+                            result = recognizer->recognize(task);
                         } catch (const std::exception& e) {
                             ok = false;
                             thread_local bool logged = false;
                             if (!logged) {
-                                std::cerr << "[Pipeline](recognizer) annotate failed: " << e.what() << "\n";
+                                std::cerr << "[Pipeline](recognizer) recognize failed: " << e.what() << "\n";
                                 logged = true;
+                            }
+                            result.stream_id = task.stream_id;
+                            result.frame_id = task.frame_id;
+                            result.frame = task.frame;
+                            result.tracks = task.tracks;
+                        }
+
+                        if (metrics_) {
+                            const uint64_t dt_ns = steady_now_ns() - t0_ns;
+                            metrics_->observe_global(RuntimeStage::Recognizer, dt_ns, ok);
+                            metrics_->observe_stream(task.stream_id, RuntimeStage::Recognizer, dt_ns, ok);
+                        }
+
+                        auto it = pipes_by_stream_id_.find(result.stream_id);
+                        if (it != pipes_by_stream_id_.end() && it->second) {
+                            it->second->recognitions_in.push_drop_oldest(std::move(result));
+                        }
+                    }
+                });
+            }
+
+            identity_stage_->workers.clear();
+            const int identity_workers = identity_worker_count(opt_.identity);
+            identity_stage_->workers.reserve(identity_workers);
+            for (int i = 0; i < identity_workers; ++i) {
+                auto decider = identity_stage_->factory->create();
+                identity_stage_->workers.emplace_back([this, decider = std::move(decider)]() mutable {
+                    while (running_.load(std::memory_order_relaxed)) {
+                        IdentityTask task;
+                        if (!identity_stage_->input.pop_for(task, std::chrono::milliseconds(200))) continue;
+                        if (!decider) continue;
+
+                        bool ok = true;
+                        IdentityResult result;
+                        const uint64_t t0_ns = steady_now_ns();
+                        try {
+                            result = decider->decide(task);
+                        } catch (const std::exception& e) {
+                            ok = false;
+                            thread_local bool logged = false;
+                            if (!logged) {
+                                std::cerr << "[Pipeline](identity) decide failed: " << e.what() << "\n";
+                                logged = true;
+                            }
+                            result.stream_id = task.stream_id;
+                            result.frame_id = task.frame_id;
+                            result.frame = task.frame;
+                            result.tracks = task.tracks;
+                            for (auto& track : result.tracks) {
+                                track.identity_key.clear();
+                                track.identity_confidence = 0.0f;
+                                track.privacy_action = "anonymize";
                             }
                         }
 
                         if (metrics_) {
-                            const uint64_t dt_ns = steady_now_ns() - recognizer_t0_ns;
-                            metrics_->observe_global(RuntimeStage::Recognizer, dt_ns, ok);
-                            metrics_->observe_stream(ctx->stream_id, RuntimeStage::Recognizer, dt_ns, ok);
+                            const uint64_t dt_ns = steady_now_ns() - t0_ns;
+                            metrics_->observe_global(RuntimeStage::Identity, dt_ns, ok);
+                            metrics_->observe_stream(task.stream_id, RuntimeStage::Identity, dt_ns, ok);
                         }
-                        publish_recognized_frame_(ctx);
+                        publish_identity_result_(std::move(result));
                     }
                 });
             }
@@ -230,7 +457,7 @@ namespace veilsight {
             pipe->ingest_thr = std::thread([this, cfg, pipe, src = std::move(src)]() mutable {
                 ingest_loop_(cfg, std::move(src), pipe);
             });
-            pipe->inf_state_thr = std::thread([this, pipe] { infer_state_loop_(pipe); });
+            pipe->coordinator_thr = std::thread([this, pipe] { coordinator_loop_(pipe); });
             pipe->enc_thr = std::thread([this, pipe] { encoder_loop_(pipe); });
             ++started_streams;
         }
@@ -248,33 +475,49 @@ namespace veilsight {
     }
 
     void PipelineRuntime::stop() {
-        if (!running_ && !detector_stage_ && !recognizer_stage_ && pipes_.empty()) return;
+        if (!running_ && !person_detector_stage_ && !face_detector_stage_ && !recognizer_stage_ && !identity_stage_ &&
+            pipes_.empty()) {
+            return;
+        }
         running_ = false;
 
-        anon_in_.stop();
-        analytics_out_.stop();
-        if (detector_stage_) detector_stage_->input.stop();
+        anonymizer_in_.stop();
+        if (person_detector_stage_) person_detector_stage_->input.stop();
+        if (face_detector_stage_) face_detector_stage_->input.stop();
         if (recognizer_stage_) recognizer_stage_->input.stop();
+        if (identity_stage_) identity_stage_->input.stop();
         for (auto& pipe : pipes_) {
-            pipe->inf_state_in.stop();
-            pipe->det_res.stop();
-            pipe->recognizer_done.stop();
-            pipe->enc_in.stop();
+            pipe->frames_in.stop();
+            pipe->person_detections_in.stop();
+            pipe->faces_in.stop();
+            pipe->recognitions_in.stop();
+            pipe->identities_in.stop();
+            pipe->encoder_in.stop();
         }
 
         for (auto& pipe : pipes_) {
             if (pipe->ingest_thr.joinable()) pipe->ingest_thr.join();
-            if (pipe->inf_state_thr.joinable()) pipe->inf_state_thr.join();
+            if (pipe->coordinator_thr.joinable()) pipe->coordinator_thr.join();
             if (pipe->enc_thr.joinable()) pipe->enc_thr.join();
         }
 
-        if (detector_stage_) {
-            for (auto& worker : detector_stage_->workers) {
+        if (person_detector_stage_) {
+            for (auto& worker : person_detector_stage_->workers) {
+                if (worker.joinable()) worker.join();
+            }
+        }
+        if (face_detector_stage_) {
+            for (auto& worker : face_detector_stage_->workers) {
                 if (worker.joinable()) worker.join();
             }
         }
         if (recognizer_stage_) {
             for (auto& worker : recognizer_stage_->workers) {
+                if (worker.joinable()) worker.join();
+            }
+        }
+        if (identity_stage_) {
+            for (auto& worker : identity_stage_->workers) {
                 if (worker.joinable()) worker.join();
             }
         }
@@ -286,8 +529,10 @@ namespace veilsight {
 
         pipes_.clear();
         pipes_by_stream_id_.clear();
-        detector_stage_.reset();
+        person_detector_stage_.reset();
+        face_detector_stage_.reset();
         recognizer_stage_.reset();
+        identity_stage_.reset();
         anonymizer_.reset();
         metrics_.reset();
     }
@@ -296,14 +541,10 @@ namespace veilsight {
         return running_.load(std::memory_order_relaxed);
     }
 
-    bool PipelineRuntime::pop_tracker_output(TrackerFrameOutput& out, std::chrono::milliseconds timeout) {
-        return analytics_out_.pop_for(out, timeout);
-    }
-
     void PipelineRuntime::ingest_loop_(const IngestConfig& cfg,
                                        std::unique_ptr<GstDualSource> src,
                                        StreamPipe* pipe) {
-        if (!src || !pipe || !detector_stage_) return;
+        if (!src || !pipe || !person_detector_stage_) return;
         if (!src->start()) {
             std::cerr << "[Pipeline](ingest_loop_) start() failed for " << cfg.id << ".\n";
             return;
@@ -330,8 +571,14 @@ namespace veilsight {
             ctx->ui_w = ctx->ui.cols;
             ctx->ui_h = ctx->ui.rows;
 
-            detector_stage_->input.push_drop_oldest(ctx);
-            pipe->inf_state_in.push_drop_oldest(ctx);
+            PersonDetectionTask person_task;
+            person_task.stream_id = ctx->stream_id;
+            person_task.frame_id = ctx->frame_id;
+            person_task.input.image = ctx->inf;
+            person_task.input.image_to_frame = identity_transform(ctx->inf.size());
+            person_task.frame_ctx = ctx;
+            person_detector_stage_->input.push_drop_oldest(std::move(person_task));
+            pipe->frames_in.push_drop_oldest(ctx);
 
             if (metrics_) {
                 const uint64_t dt_ns = steady_now_ns() - ingest_t0_ns;
@@ -342,106 +589,88 @@ namespace veilsight {
         src->stop();
     }
 
-    void PipelineRuntime::infer_state_loop_(StreamPipe* pipe) {
-        if (!pipe || !pipe->inf_state) return;
+    void PipelineRuntime::coordinator_loop_(StreamPipe* pipe) {
+        if (!pipe || !pipe->coordinator) return;
 
-        StreamInferenceState::Callbacks callbacks;
+        StreamCoordinator::Callbacks callbacks;
         callbacks.on_tracker_timing = [this](const FrameCtx& frame, uint64_t duration_ns) {
             if (!metrics_) return;
             metrics_->observe_global(RuntimeStage::Tracker, duration_ns);
             metrics_->observe_stream(frame.stream_id, RuntimeStage::Tracker, duration_ns);
         };
-        callbacks.on_frame_ready = [this, pipe](const FramePtr& frame) {
-            enqueue_recognizer_(pipe, frame);
+        callbacks.on_face_probes_ready = [this](std::vector<FaceDetectionTask> probes) {
+            if (!face_detector_stage_) return;
+            for (auto& probe : probes) {
+                face_detector_stage_->input.push_drop_oldest(std::move(probe));
+            }
+        };
+        callbacks.on_identity_ready = [this](IdentityTask task) {
+            if (!identity_stage_) return;
+            identity_stage_->input.push_drop_oldest(std::move(task));
+        };
+        callbacks.on_recognition_ready = [this](RecognitionTask task) {
+            if (!recognizer_stage_) return;
+            recognizer_stage_->input.push_drop_oldest(std::move(task));
+        };
+        callbacks.on_frame_committed = [this](const FramePtr& frame) {
+            commit_frame_(frame);
         };
 
         while (running_.load(std::memory_order_relaxed)) {
-            FramePtr ctx;
-            if (pipe->inf_state_in.pop_for(ctx, std::chrono::milliseconds(2)) && ctx) {
-                pipe->inf_state->push_frame(ctx);
+            FramePtr frame;
+            if (pipe->frames_in.pop_for(frame, std::chrono::milliseconds(2)) && frame) {
+                pipe->coordinator->push_frame(frame);
             }
-            while (pipe->inf_state_in.try_pop(ctx)) {
-                if (!ctx) continue;
-                pipe->inf_state->push_frame(ctx);
-            }
-
-            InferResults det;
-            while (pipe->det_res.try_pop(det)) {
-                pipe->inf_state->push_detection(std::move(det));
+            while (pipe->frames_in.try_pop(frame)) {
+                if (frame) pipe->coordinator->push_frame(frame);
             }
 
-            pipe->inf_state->drain_ready(callbacks);
-
-            FramePtr recognized;
-            while (pipe->recognizer_done.try_pop(recognized)) {
-                if (!recognized) continue;
-                pipe->pending_recognized[recognized->frame_id] = recognized;
+            PersonDetectionResult person_result;
+            while (pipe->person_detections_in.try_pop(person_result)) {
+                pipe->coordinator->push_person_detection(std::move(person_result));
             }
-            drain_recognized_ready_(pipe);
+
+            FaceDetectionResult face_result;
+            while (pipe->faces_in.try_pop(face_result)) {
+                pipe->coordinator->push_face_result(std::move(face_result));
+            }
+
+            RecognitionResult recognition_result;
+            while (pipe->recognitions_in.try_pop(recognition_result)) {
+                pipe->coordinator->push_recognition_result(std::move(recognition_result));
+            }
+
+            IdentityResult identity_result;
+            while (pipe->identities_in.try_pop(identity_result)) {
+                pipe->coordinator->push_identity_result(std::move(identity_result));
+            }
+
+            pipe->coordinator->drain_ready(callbacks);
         }
     }
 
-    void PipelineRuntime::enqueue_recognizer_(StreamPipe* pipe, const FramePtr& frame) {
-        if (!pipe || !frame || !recognizer_stage_) return;
-        if (pipe->next_commit_frame_id < 0) {
-            pipe->next_commit_frame_id = frame->frame_id;
-        }
-        pipe->latest_queued_recognizer_frame_id = std::max(pipe->latest_queued_recognizer_frame_id,
-                                                           frame->frame_id);
-        recognizer_stage_->input.push_drop_oldest(frame);
-    }
-
-    void PipelineRuntime::publish_recognized_frame_(const FramePtr& frame) {
-        if (!frame) return;
-        auto it = pipes_by_stream_id_.find(frame->stream_id);
+    void PipelineRuntime::publish_identity_result_(IdentityResult result) {
+        auto it = pipes_by_stream_id_.find(result.stream_id);
         if (it == pipes_by_stream_id_.end() || !it->second) return;
-        it->second->recognizer_done.push_drop_oldest(frame);
-    }
-
-    void PipelineRuntime::drain_recognized_ready_(StreamPipe* pipe) {
-        if (!pipe) return;
-        if (pipe->next_commit_frame_id < 0 && !pipe->pending_recognized.empty()) {
-            pipe->next_commit_frame_id = pipe->pending_recognized.begin()->first;
-        }
-
-        for (auto it = pipe->pending_recognized.begin(); it != pipe->pending_recognized.end();) {
-            if (it->first >= pipe->next_commit_frame_id) break;
-            it = pipe->pending_recognized.erase(it);
-        }
-
-        while (pipe->next_commit_frame_id >= 0) {
-            auto it = pipe->pending_recognized.find(pipe->next_commit_frame_id);
-            if (it != pipe->pending_recognized.end()) {
-                commit_frame_(it->second);
-                pipe->pending_recognized.erase(it);
-                ++pipe->next_commit_frame_id;
-                continue;
-            }
-
-            if (pipe->latest_queued_recognizer_frame_id >= 0 &&
-                pipe->latest_queued_recognizer_frame_id - pipe->next_commit_frame_id > opt_.reorder_window) {
-                ++pipe->next_commit_frame_id;
-                continue;
-            }
-            break;
-        }
-
-        while (pipe->pending_recognized.size() > opt_.pending_state_limit) {
-            pipe->pending_recognized.erase(pipe->pending_recognized.begin());
-        }
+        it->second->identities_in.push_drop_oldest(std::move(result));
     }
 
     void PipelineRuntime::commit_frame_(const FramePtr& frame) {
         if (!frame) return;
-        publish_tracker_output_(*frame, frame->tracked_boxes);
+        publish_frame_analytics_(*frame, frame->tracked_boxes);
         frame->inf.release();
-        anon_in_.push_drop_oldest(frame);
+        AnonymizeTask task;
+        task.stream_id = frame->stream_id;
+        task.frame_id = frame->frame_id;
+        task.frame = frame;
+        anonymizer_in_.push_drop_oldest(std::move(task));
     }
 
     void PipelineRuntime::anonymizer_loop_() {
         while (running_.load(std::memory_order_relaxed)) {
-            FramePtr ctx;
-            if (!anon_in_.pop_for(ctx, std::chrono::milliseconds(200))) continue;
+            AnonymizeTask task;
+            if (!anonymizer_in_.pop_for(task, std::chrono::milliseconds(200))) continue;
+            FramePtr ctx = task.frame;
             if (!ctx) continue;
             const uint64_t anonymizer_t0_ns = steady_now_ns();
 
@@ -460,7 +689,11 @@ namespace veilsight {
 
             auto it = pipes_by_stream_id_.find(ctx->stream_id);
             if (it != pipes_by_stream_id_.end() && it->second) {
-                it->second->enc_in.push_drop_oldest(ctx);
+                AnonymizeResult result;
+                result.stream_id = ctx->stream_id;
+                result.frame_id = ctx->frame_id;
+                result.frame = ctx;
+                it->second->encoder_in.push_drop_oldest(std::move(result));
             }
         }
     }
@@ -470,8 +703,9 @@ namespace veilsight {
         const std::string ui_key = pipe->stream_id + "/ui";
 
         while (running_.load(std::memory_order_relaxed)) {
-            FramePtr ctx;
-            if (!pipe->enc_in.pop_for(ctx, std::chrono::milliseconds(200))) continue;
+            AnonymizeResult result;
+            if (!pipe->encoder_in.pop_for(result, std::chrono::milliseconds(200))) continue;
+            FramePtr ctx = result.frame;
             if (!ctx || ctx->ui.empty()) continue;
             const uint64_t encoder_t0_ns = steady_now_ns();
 
@@ -503,20 +737,31 @@ namespace veilsight {
         }
     }
 
-    bool PipelineRuntime::validate_thread_budget_(const IDetectorFactory& detector_factory,
-                                                  const IRecognizerFactory& recognizer_factory) const {
+    bool PipelineRuntime::validate_thread_budget_(const IPersonDetectorFactory& detector_factory,
+                                                  const IFaceDetectorFactory* face_detector_factory,
+                                                  const IRecognizerFactory& recognizer_factory,
+                                                  const IIdentityDeciderFactory& identity_factory) const {
         const size_t cpu_budget = static_cast<size_t>(std::max(1u, std::thread::hardware_concurrency()));
         const size_t stream_threads = streams_.size() * 3u;
-        const size_t detector_parallelism =
-            static_cast<size_t>(std::max(1, opt_.detector.workers)) *
+        const size_t person_detector_parallelism =
+            static_cast<size_t>(std::max(1, opt_.person_detector.workers)) *
             static_cast<size_t>(std::max(1, detector_factory.backend_threads()));
+        const size_t face_detector_parallelism =
+            face_detector_factory
+                ? static_cast<size_t>(std::max(1, opt_.face_detector.workers)) *
+                      static_cast<size_t>(std::max(1, face_detector_factory->backend_threads()))
+                : 0u;
         const size_t recognizer_parallelism =
-            static_cast<size_t>(std::max(1, opt_.recognizer.workers)) *
+            static_cast<size_t>(recognizer_worker_count(opt_.recognizer)) *
             static_cast<size_t>(std::max(1, recognizer_factory.backend_threads()));
+        const size_t identity_parallelism =
+            static_cast<size_t>(identity_worker_count(opt_.identity)) *
+            static_cast<size_t>(std::max(1, identity_factory.backend_threads()));
         const size_t anonymizer_threads = static_cast<size_t>(std::max(1, opt_.anonymizer_workers));
         const size_t metrics_threads = opt_.metrics.enabled ? 1u : 0u;
         const size_t total_parallelism =
-            stream_threads + detector_parallelism + recognizer_parallelism + anonymizer_threads + metrics_threads;
+            stream_threads + person_detector_parallelism + face_detector_parallelism +
+            recognizer_parallelism + identity_parallelism + anonymizer_threads + metrics_threads;
 
         if (total_parallelism <= cpu_budget) {
             return true;
@@ -526,8 +771,10 @@ namespace veilsight {
                   << total_parallelism
                   << " cpu_budget=" << cpu_budget
                   << " stream_threads=" << stream_threads
-                  << " detector_parallelism=" << detector_parallelism
+                  << " person_detector_parallelism=" << person_detector_parallelism
+                  << " face_detector_parallelism=" << face_detector_parallelism
                   << " recognizer_parallelism=" << recognizer_parallelism
+                  << " identity_parallelism=" << identity_parallelism
                   << " anonymizer_threads=" << anonymizer_threads
                   << " metrics_threads=" << metrics_threads
                   << "\n";
@@ -579,49 +826,40 @@ namespace veilsight {
         }
     }
 
-    void PipelineRuntime::publish_tracker_output_(const FrameCtx& ctx, const std::vector<Box>& tracks) {
+    void PipelineRuntime::publish_frame_analytics_(const FrameCtx& ctx, const std::vector<Box>& tracks) {
         std::vector<Box> ui_tracks;
         ui_tracks.reserve(tracks.size());
         for (const auto& track : tracks) {
             ui_tracks.push_back(map_box_to_ui(track, ctx));
         }
 
-        TrackerFrameOutput out;
-        out.stream_id = ctx.stream_id;
-        out.frame_id = ctx.frame_id;
-        out.pts_ns = ctx.pts_ns;
-        out.tracks = ui_tracks;
-        out.width = ctx.ui_w;
-        out.height = ctx.ui_h;
-        analytics_out_.push_drop_oldest(std::move(out));
         telemetry_publisher_.publish_frame_analytics(ctx, ui_tracks);
     }
 
     std::map<std::string, QueueSnapshot> PipelineRuntime::snapshot_queues_() const {
         std::map<std::string, QueueSnapshot> out;
-        if (detector_stage_) {
-            out["infer_in"] = QueueSnapshot{detector_stage_->input.size(),
-                                             detector_stage_->input.capacity(),
-                                             detector_stage_->input.dropped_count()};
+        if (person_detector_stage_) {
+            add_queue_snapshot(out, person_detector_stage_->input.snapshot(), person_detector_stage_->input.name());
+        }
+        if (face_detector_stage_) {
+            add_queue_snapshot(out, face_detector_stage_->input.snapshot(), face_detector_stage_->input.name());
         }
         if (recognizer_stage_) {
-            out["recognizer_in"] = QueueSnapshot{recognizer_stage_->input.size(),
-                                                  recognizer_stage_->input.capacity(),
-                                                  recognizer_stage_->input.dropped_count()};
+            add_queue_snapshot(out, recognizer_stage_->input.snapshot(), recognizer_stage_->input.name());
         }
-        out["anon_in"] = QueueSnapshot{anon_in_.size(), anon_in_.capacity(), anon_in_.dropped_count()};
-        out["analytics_out"] = QueueSnapshot{analytics_out_.size(), analytics_out_.capacity(), analytics_out_.dropped_count()};
+        if (identity_stage_) {
+            add_queue_snapshot(out, identity_stage_->input.snapshot(), identity_stage_->input.name());
+        }
+        add_queue_snapshot(out, anonymizer_in_.snapshot(), anonymizer_in_.name());
 
         for (const auto& pipe : pipes_) {
             if (!pipe) continue;
-            out[pipe->stream_id + "/inf_state_in"] =
-                QueueSnapshot{pipe->inf_state_in.size(), pipe->inf_state_in.capacity(), pipe->inf_state_in.dropped_count()};
-            out[pipe->stream_id + "/det_res"] =
-                QueueSnapshot{pipe->det_res.size(), pipe->det_res.capacity(), pipe->det_res.dropped_count()};
-            out[pipe->stream_id + "/recognizer_done"] =
-                QueueSnapshot{pipe->recognizer_done.size(), pipe->recognizer_done.capacity(), pipe->recognizer_done.dropped_count()};
-            out[pipe->stream_id + "/enc_in"] =
-                QueueSnapshot{pipe->enc_in.size(), pipe->enc_in.capacity(), pipe->enc_in.dropped_count()};
+            add_queue_snapshot(out, pipe->frames_in.snapshot(), pipe->frames_in.name());
+            add_queue_snapshot(out, pipe->person_detections_in.snapshot(), pipe->person_detections_in.name());
+            add_queue_snapshot(out, pipe->faces_in.snapshot(), pipe->faces_in.name());
+            add_queue_snapshot(out, pipe->recognitions_in.snapshot(), pipe->recognitions_in.name());
+            add_queue_snapshot(out, pipe->identities_in.snapshot(), pipe->identities_in.name());
+            add_queue_snapshot(out, pipe->encoder_in.snapshot(), pipe->encoder_in.name());
         }
         return out;
     }
@@ -653,17 +891,21 @@ namespace veilsight {
                 auto it = snap.global.find(stage);
                 return (it != snap.global.end()) ? it->second : StageSnapshot{};
             };
-            const StageSnapshot det = pick_stage(RuntimeStage::Detector);
+            const StageSnapshot person = pick_stage(RuntimeStage::PersonDetector);
             const StageSnapshot trk = pick_stage(RuntimeStage::Tracker);
+            const StageSnapshot face = pick_stage(RuntimeStage::FaceDetector);
             const StageSnapshot rec = pick_stage(RuntimeStage::Recognizer);
+            const StageSnapshot identity = pick_stage(RuntimeStage::Identity);
             const StageSnapshot ano = pick_stage(RuntimeStage::Anonymizer);
             const StageSnapshot enc = pick_stage(RuntimeStage::Encoder);
             const StageSnapshot e2e = pick_stage(RuntimeStage::EndToEnd);
 
             std::cerr << "[Metrics] "
-                      << "det_fps=" << det.fps << " det_p95_ms=" << det.p95_ms << " "
+                      << "person_fps=" << person.fps << " person_p95_ms=" << person.p95_ms << " "
                       << "trk_fps=" << trk.fps << " trk_p95_ms=" << trk.p95_ms << " "
+                      << "face_fps=" << face.fps << " face_p95_ms=" << face.p95_ms << " "
                       << "rec_fps=" << rec.fps << " rec_p95_ms=" << rec.p95_ms << " "
+                      << "identity_fps=" << identity.fps << " identity_p95_ms=" << identity.p95_ms << " "
                       << "anon_fps=" << ano.fps << " anon_p95_ms=" << ano.p95_ms << " "
                       << "enc_fps=" << enc.fps << " enc_p95_ms=" << enc.p95_ms << " "
                       << "e2e_p95_ms=" << e2e.p95_ms

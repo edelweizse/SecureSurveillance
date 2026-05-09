@@ -1,4 +1,4 @@
-#include <inference/scrfd_detector.hpp>
+#include <face_detector/scrfd_detector.hpp>
 
 #include <algorithm>
 #include <array>
@@ -14,11 +14,17 @@
 
 namespace veilsight {
     namespace {
-        float area_of(const Box& b) {
+        std::string canonical_scrfd_variant(std::string variant) {
+            if (variant == "2.5g") return "25g";
+            if (variant == "2.5g_landmarks") return "25g_landmarks";
+            return variant;
+        }
+
+        float area_of(const RectF& b) {
             return std::max(0.0f, b.w) * std::max(0.0f, b.h);
         }
 
-        float iou_of(const Box& a, const Box& b) {
+        float iou_of(const RectF& a, const RectF& b) {
             const float ax2 = a.x + a.w;
             const float ay2 = a.y + a.h;
             const float bx2 = b.x + b.w;
@@ -42,8 +48,14 @@ namespace veilsight {
         std::string resolve_path_or_throw(const std::string& p) {
             namespace fs = std::filesystem;
             if (fs::exists(fs::path(p))) return p;
-            const fs::path alt = fs::path("../../../") / p;
-            if (fs::exists(alt)) return alt.string();
+            const fs::path candidates[] = {
+                fs::path("../") / p,
+                fs::path("../../") / p,
+                fs::path("../../../") / p,
+            };
+            for (const auto& candidate : candidates) {
+                if (fs::exists(candidate)) return candidate.string();
+            }
             throw std::runtime_error("Model path not found: " + p);
         }
 
@@ -57,6 +69,48 @@ namespace veilsight {
             const int n = mat_total_len(score);
             if (idx >= n) return 0.0f;
             return data[idx];
+        }
+
+        float read_tensor_component(const ncnn::Mat& mat, int idx, int component, int component_count, int expected_count) {
+            if (component_count <= 0) return 0.0f;
+            const float* data = static_cast<const float*>(mat.data);
+            if (!data || idx < 0 || component < 0 || component >= component_count) return 0.0f;
+
+            if (mat.dims == 2) {
+                if (mat.h == component_count && idx < mat.w) {
+                    return data[component * mat.w + idx];
+                }
+                if (mat.w == component_count && idx < mat.h) {
+                    return data[idx * mat.w + component];
+                }
+            }
+
+            if (mat.dims == 3) {
+                if (mat.c == component_count) {
+                    const int plane = mat.w * mat.h;
+                    if (idx < plane) {
+                        const float* ch = mat.channel(component);
+                        return ch[idx];
+                    }
+                }
+                if (mat.c == 1 && mat.h == component_count && idx < mat.w) {
+                    return data[component * mat.w + idx];
+                }
+            }
+
+            const size_t off_by_rows = static_cast<size_t>(component) * static_cast<size_t>(expected_count) +
+                                       static_cast<size_t>(idx);
+            if (off_by_rows < mat.total()) {
+                return data[off_by_rows];
+            }
+
+            const size_t off_by_cols = static_cast<size_t>(idx) * static_cast<size_t>(component_count) +
+                                       static_cast<size_t>(component);
+            if (off_by_cols < mat.total()) {
+                return data[off_by_cols];
+            }
+
+            return 0.0f;
         }
 
         float read_box_component(const ncnn::Mat& box, int idx, int component, int expected_count) {
@@ -98,17 +152,29 @@ namespace veilsight {
 
             return 0.0f;
         }
+
+        Box face_to_box(const FaceObservation& face) {
+            Box box;
+            box.x = face.bbox.x;
+            box.y = face.bbox.y;
+            box.w = face.bbox.w;
+            box.h = face.bbox.h;
+            box.score = face.score;
+            box.face = face;
+            return box;
+        }
     } // namespace
 
     class SCRFDDetector::Impl {
     public:
         explicit Impl(const SCRFDModuleConfig& cfg) {
+            const std::string variant = canonical_scrfd_variant(cfg.variant);
             const bool variant_supported =
-                cfg.variant == "25g" ||
-                cfg.variant == "500m" ||
-                cfg.variant == "25g_landmarks" ||
-                cfg.variant == "500m_landmarks" ||
-                    cfg.variant == "10g";
+                variant == "25g" ||
+                variant == "500m" ||
+                variant == "25g_landmarks" ||
+                variant == "500m_landmarks" ||
+                variant == "10g";
             if (!variant_supported) {
                 throw std::invalid_argument("[SCRFD] Unsupported variant: " + cfg.variant);
             }
@@ -128,7 +194,7 @@ namespace veilsight {
             }
         }
 
-        std::vector<Box> detect(const cv::Mat& bgr, const SCRFDModuleConfig& cfg) {
+        std::vector<FaceObservation> detect_faces(const cv::Mat& bgr, const SCRFDModuleConfig& cfg) {
             if (bgr.empty()) return {};
 
             ncnn::Mat in = ncnn::Mat::from_pixels_resize(
@@ -167,18 +233,18 @@ namespace veilsight {
                 }
             }
 
-            const bool expects_landmarks = cfg.variant.find("landmarks") != std::string::npos;
-            if (expects_landmarks) {
-                for (int i = 6; i < 9; ++i) {
-                    const std::string name = "out" + std::to_string(i);
-                    (void)ex.extract(name.c_str(), out[static_cast<size_t>(i)]);
-                }
+            std::array<bool, 3> has_landmarks{};
+            for (int i = 6; i < 9; ++i) {
+                const std::string name = "out" + std::to_string(i);
+                has_landmarks[static_cast<size_t>(i - 6)] =
+                    ex.extract(name.c_str(), out[static_cast<size_t>(i)]) == 0 &&
+                    mat_total_len(out[static_cast<size_t>(i)]) > 0;
             }
 
             const float sx = static_cast<float>(bgr.cols) / static_cast<float>(cfg.input_w);
             const float sy = static_cast<float>(bgr.rows) / static_cast<float>(cfg.input_h);
 
-            std::vector<Box> candidates;
+            std::vector<FaceObservation> candidates;
             candidates.reserve(1024);
 
             static constexpr int kStrides[3] = {8, 16, 32};
@@ -186,6 +252,7 @@ namespace veilsight {
                 const int stride = kStrides[level];
                 const ncnn::Mat& score = out[static_cast<size_t>(level)];
                 const ncnn::Mat& box = out[static_cast<size_t>(3 + level)];
+                const ncnn::Mat& landmarks = out[static_cast<size_t>(6 + level)];
 
                 const int feat_w = cfg.input_w / stride;
                 const int feat_h = cfg.input_h / stride;
@@ -223,12 +290,25 @@ namespace veilsight {
                     const float y2 = std::clamp((cy + b) * sy, 0.0f, static_cast<float>(bgr.rows));
                     if (x2 <= x1 || y2 <= y1) continue;
 
-                    Box det;
-                    det.x = x1;
-                    det.y = y1;
-                    det.w = x2 - x1;
-                    det.h = y2 - y1;
+                    FaceObservation det;
+                    det.bbox.x = x1;
+                    det.bbox.y = y1;
+                    det.bbox.w = x2 - x1;
+                    det.bbox.h = y2 - y1;
                     det.score = score_val;
+                    if (has_landmarks[static_cast<size_t>(level)]) {
+                        det.landmark_count = 5;
+                        for (int k = 0; k < 5; ++k) {
+                            const float lx = cx + read_tensor_component(landmarks, idx, k * 2, 10, count) *
+                                                   static_cast<float>(stride);
+                            const float ly = cy + read_tensor_component(landmarks, idx, k * 2 + 1, 10, count) *
+                                                   static_cast<float>(stride);
+                            det.landmarks[static_cast<size_t>(k)].x =
+                                std::clamp(lx * sx, 0.0f, static_cast<float>(bgr.cols));
+                            det.landmarks[static_cast<size_t>(k)].y =
+                                std::clamp(ly * sy, 0.0f, static_cast<float>(bgr.rows));
+                        }
+                    }
                     candidates.push_back(std::move(det));
                 }
             }
@@ -252,10 +332,10 @@ namespace veilsight {
             std::vector<int> keep_indices;
             keep_indices.reserve(order.size());
             for (const int idx : order) {
-                const Box& candidate = candidates[static_cast<size_t>(idx)];
+                const FaceObservation& candidate = candidates[static_cast<size_t>(idx)];
                 bool keep = true;
                 for (const int kept : keep_indices) {
-                    if (iou_of(candidate, candidates[static_cast<size_t>(kept)]) > cfg.nms_threshold) {
+                    if (iou_of(candidate.bbox, candidates[static_cast<size_t>(kept)].bbox) > cfg.nms_threshold) {
                         keep = false;
                         break;
                     }
@@ -263,12 +343,12 @@ namespace veilsight {
                 if (keep) keep_indices.push_back(idx);
             }
 
-            std::vector<Box> out_boxes;
-            out_boxes.reserve(keep_indices.size());
+            std::vector<FaceObservation> out_faces;
+            out_faces.reserve(keep_indices.size());
             for (const int idx : keep_indices) {
-                out_boxes.push_back(candidates[static_cast<size_t>(idx)]);
+                out_faces.push_back(candidates[static_cast<size_t>(idx)]);
             }
-            return out_boxes;
+            return out_faces;
         }
 
     private:
@@ -285,6 +365,20 @@ namespace veilsight {
     SCRFDDetector& SCRFDDetector::operator=(SCRFDDetector&&) noexcept = default;
 
     std::vector<Box> SCRFDDetector::detect(const cv::Mat& bgr) {
-        return impl_->detect(bgr, cfg_);
+        const auto faces = impl_->detect_faces(bgr, cfg_);
+        std::vector<Box> boxes;
+        boxes.reserve(faces.size());
+        for (const auto& face : faces) {
+            boxes.push_back(face_to_box(face));
+        }
+        return boxes;
+    }
+
+    std::vector<FaceObservation> SCRFDDetector::detect_faces(const cv::Mat& bgr,
+                                                             const FaceDetectorRunConfig& run) {
+        SCRFDModuleConfig run_cfg = cfg_;
+        run_cfg.input_w = std::max(1, run.input_w);
+        run_cfg.input_h = std::max(1, run.input_h);
+        return impl_->detect_faces(bgr, run_cfg);
     }
 }

@@ -4,6 +4,7 @@ import {
   Check,
   CircleX,
   FileCheck,
+  FolderOpen,
   GitCommitHorizontal,
   Layers,
   MousePointer2,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { AnalyticsRule, AnalyticsSnapshot, DrawMode, OverlayLayers, Point } from "./analytics/types";
-import { api, type PipelineStatus, type StreamInfo } from "./api/client";
+import { api, type ConfigFileInfo, type PipelineStatus, type StreamInfo } from "./api/client";
 import { connectJsonWebSocket } from "./api/ws";
 import { AnalyticsOverlay } from "./components/AnalyticsOverlay";
 import { WebRTCPlayer, type StreamProtocol } from "./components/WebRTCPlayer";
@@ -26,8 +27,15 @@ function streamKey(stream: Pick<StreamInfo, "stream_id" | "profile">) {
   return `${stream.stream_id}/${stream.profile}`;
 }
 
+function queueRows(raw: unknown): Array<{ name: string; size?: number; capacity?: number; dropped?: number; producer?: string; consumer?: string; description?: string }> {
+  if (Array.isArray(raw)) return raw as Array<{ name: string; size?: number; capacity?: number; dropped?: number; producer?: string; consumer?: string; description?: string }>;
+  if (!raw || typeof raw !== "object") return [];
+  return Object.entries(raw as Record<string, any>).map(([name, value]) => ({ name, ...(value ?? {}) }));
+}
+
 const defaultLayers: OverlayLayers = {
   tracks: true,
+  faces: true,
   heatmap: false,
   density: false,
   directions: true,
@@ -39,6 +47,7 @@ const defaultLayers: OverlayLayers = {
 function LayerToggles({ layers, onChange }: { layers: OverlayLayers; onChange: (layers: OverlayLayers) => void }) {
   const items: Array<[keyof OverlayLayers, string]> = [
     ["tracks", "Tracks"],
+    ["faces", "Faces"],
     ["heatmap", "Heatmap"],
     ["density", "Density"],
     ["directions", "Directions"],
@@ -275,22 +284,25 @@ export function App() {
   const [drawMode, setDrawMode] = useState<DrawMode>("select");
   const [streamProtocols, setStreamProtocols] = useState<Record<string, StreamProtocol>>({});
   const [configPath, setConfigPath] = useState("");
+  const [configFiles, setConfigFiles] = useState<ConfigFileInfo[]>([]);
   const [yamlText, setYamlText] = useState("");
   const [configMessage, setConfigMessage] = useState("");
 
   async function refresh() {
-    const [healthValue, statusValue, streamsValue, metricsValue, configValue] = await Promise.all([
+    const [healthValue, statusValue, streamsValue, metricsValue, configValue, configsValue] = await Promise.all([
       api.health().catch((error) => ({ ok: false, error: String(error) })),
       api.status().catch((error) => ({ state: "disconnected", message: String(error) })),
       api.streams().catch(() => ({ streams: [], public_base_url: "" })),
       api.metrics().catch(() => ({})),
-      api.config().catch(() => ({ path: "", yaml_text: "" }))
+      api.config().catch(() => ({ path: "", yaml_text: "" })),
+      api.configs().catch(() => ({ active_path: "", files: [] }))
     ]);
     setHealth(healthValue);
     setStatus(statusValue);
     setStreams(streamsValue.streams);
     setMetrics(metricsValue);
     setConfigPath(configValue.path);
+    setConfigFiles(configsValue.files);
     setYamlText(configValue.yaml_text);
     setSelectedKey((current) => current || (streamsValue.streams[0] ? streamKey(streamsValue.streams[0]) : ""));
   }
@@ -337,6 +349,15 @@ export function App() {
   async function saveConfig() {
     const result = await api.saveConfig(yamlText);
     setConfigMessage(JSON.stringify(result, null, 2));
+  }
+
+  async function selectConfig(path: string) {
+    const result = await api.selectConfig(path);
+    setConfigPath(result.path);
+    setYamlText(result.yaml_text);
+    setConfigMessage(`Loaded ${result.path}`);
+    setConfigFiles((files) => files.map((file) => ({ ...file, active: file.path === result.path })));
+    await refresh();
   }
 
   async function createRule(kind: "line" | "area", points: Point[]) {
@@ -394,7 +415,16 @@ export function App() {
   }
 
   const globalStages = Array.isArray(metrics.global) ? metrics.global : [];
-  const queues = Array.isArray(metrics.queues) ? metrics.queues : [];
+  const queues = queueRows(metrics.queues);
+  const selectedStreamId = selectedStream?.stream_id ?? "";
+  const visibleQueues = queues.filter((q: any) => {
+    const name = String(q.name ?? "");
+    if (name.startsWith("global/")) return true;
+    if (selectedStreamId && name.startsWith(`stream/${selectedStreamId}/`)) return true;
+    const slash = name.indexOf("/");
+    if (slash < 0) return true;
+    return name.slice(0, slash) === selectedStreamId;
+  });
 
   return (
     <main className="app-shell">
@@ -430,14 +460,21 @@ export function App() {
           <section>
             <h2><Activity size={16} />Metrics</h2>
             <div className="metric-grid">
-              {["detector", "tracker", "anonymizer", "encoder"].map((stage) => {
+              {[
+                ["person_detector", "person_detector"],
+                ["tracker", "tracker"],
+                ["face_detector", "face_detector"],
+                ["identity", "identity"],
+                ["anonymizer", "anonymizer"],
+                ["encoder", "encoder"]
+              ].map(([stage, label]) => {
                 const row = globalStages.find((item: any) => item.stage === stage) ?? {};
-                return <div className="metric" key={stage}><span>{stage}</span><strong>{Number(row.fps ?? 0).toFixed(1)} fps</strong><small>p95 {Number(row.p95_ms ?? 0).toFixed(1)} ms</small></div>;
+                return <div className="metric" key={stage}><span>{label}</span><strong>{Number(row.fps ?? 0).toFixed(1)} fps</strong><small>p95 {Number(row.p95_ms ?? 0).toFixed(1)} ms</small></div>;
               })}
             </div>
             <table>
-              <thead><tr><th>Queue</th><th>Size</th><th>Drop</th></tr></thead>
-              <tbody>{queues.map((q: any) => <tr key={q.name}><td>{q.name}</td><td>{q.size}/{q.capacity}</td><td>{q.dropped}</td></tr>)}</tbody>
+              <thead><tr><th>Queue</th><th>Flow</th><th>Size</th><th>Drop</th></tr></thead>
+              <tbody>{visibleQueues.map((q: any) => <tr key={q.name}><td>{q.name}</td><td>{q.producer && q.consumer ? `${q.producer} -> ${q.consumer}` : "-"}</td><td>{q.size}/{q.capacity}</td><td>{q.dropped}</td></tr>)}</tbody>
             </table>
           </section>
 
@@ -469,7 +506,33 @@ export function App() {
 
       <section className="config-editor">
         <h2><FileCheck size={16} />Config</h2>
-        <textarea value={yamlText} onChange={(event) => setYamlText(event.target.value)} spellCheck={false} />
+        <div className="config-toolbar">
+          <label>
+            <FolderOpen size={16} />
+            <span>Config file</span>
+            <select
+              value={configPath}
+              onChange={(event) => void selectConfig(event.target.value)}
+              disabled={configFiles.length === 0}
+              aria-label="Config file"
+            >
+              {configFiles.length === 0 ? (
+                <option value="">No config files found</option>
+              ) : (
+                <>
+                  {!configPath && <option value="">Choose a config</option>}
+                  {configFiles.map((file) => (
+                    <option value={file.path} key={file.path}>
+                      {file.name}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+          </label>
+          <span>{configPath || "No active config"}</span>
+        </div>
+        <textarea aria-label="Config YAML" value={yamlText} onChange={(event) => setYamlText(event.target.value)} spellCheck={false} />
         <div className="editor-actions">
           <button onClick={validateConfig}>Validate</button>
           <button onClick={saveConfig}>Save</button>

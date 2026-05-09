@@ -1,11 +1,12 @@
 #pragma once
 
-#include <inference/detector.hpp>
+#include <person_detector/person_detector.hpp>
+#include <face_detector/face_detector.hpp>
 
 #include <memory>
 
 namespace veilsight {
-    class YuNetDetector final : public IDetector {
+    class YuNetDetector final : public IPersonDetector, public IFaceDetector {
     public:
         explicit YuNetDetector(YuNetModuleConfig cfg);
         ~YuNetDetector();
@@ -17,6 +18,8 @@ namespace veilsight {
         YuNetDetector& operator=(const YuNetDetector&) = delete;
 
         std::vector<Box> detect(const cv::Mat& bgr) override;
+        std::vector<FaceObservation> detect_faces(const cv::Mat& bgr,
+                                                  const FaceDetectorRunConfig& run) override;
 
     private:
         YuNetModuleConfig cfg_;
