@@ -441,6 +441,9 @@ namespace veilsight {
                         decision.state == TrackRecognitionState::DecidedUnknown) {
                         decision.last_seen_frame = frame_id;
                         apply_decision(track, decision);
+                    } else {
+                        track.recognition_state = decision.recognition_state.empty()
+                        ? "pending" : decision.recognition_state;
                     }
                     return false;
                 }
