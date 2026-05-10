@@ -323,6 +323,7 @@ function GalleryView({ streams }: { streams: StreamInfo[] }) {
   const [galleryMessage, setGalleryMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [streamChoice, setStreamChoice] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   async function loadIdentities(nextSelected?: string) {
@@ -343,6 +344,7 @@ function GalleryView({ streams }: { streams: StreamInfo[] }) {
       setEmbeddings([]);
       return;
     }
+    setDeleteConfirm(false);
     void api.galleryEmbeddings(selectedKey).then(setEmbeddings).catch(() => setEmbeddings([]));
     const identity = identities.find((item) => item.identity_key === selectedKey);
     setDraftName(identity?.display_name || identity?.identity_key || "");
@@ -375,6 +377,28 @@ function GalleryView({ streams }: { streams: StreamInfo[] }) {
     const updated = await api.updateGalleryIdentity(selectedIdentity.identity_key, { active: false });
     setGalleryMessage(`Deactivated ${updated.identity_key}`);
     await loadIdentities(updated.identity_key);
+  }
+
+  async function activateIdentity() {
+    if (!selectedIdentity) return;
+    const updated = await api.updateGalleryIdentity(selectedIdentity.identity_key, { active: true });
+    setGalleryMessage(`Activated ${updated.identity_key}`);
+    await loadIdentities(updated.identity_key);
+  }
+
+  async function permanentlyDeleteIdentity() {
+    if (!selectedIdentity) return;
+    await api.deleteGalleryIdentity(selectedIdentity.identity_key);
+    const refresh = await api.refreshGallery().catch((error) => ({ accepted: false, message: String(error) }));
+    const success = (refresh as any).accepted ? "success" : "failure";
+    setGalleryMessage(`Deleted ${selectedIdentity.identity_key} permanently; refresh ${success}`);
+    
+    await loadIdentities();
+    setSelectedKey("");
+    setEmbeddings([]);
+    setEnrollment(null);
+    setSelectedCandidates([]);
+    setDeleteConfirm(false);
   }
 
   async function analyzeBlob(blob: Blob, filename = "capture.jpg") {
@@ -418,7 +442,24 @@ function GalleryView({ streams }: { streams: StreamInfo[] }) {
     try {
       await api.commitGalleryEmbeddings(selectedIdentity.identity_key, enrollment.enrollment_id, selectedCandidates);
       const refresh = await api.refreshGallery().catch((error) => ({ accepted: false, message: String(error) }));
-      setGalleryMessage(`Committed ${selectedCandidates.length}; refresh ${String((refresh as any).message || (refresh as any).accepted)}`);
+      
+      const wasInactive = selectedIdentity.active === false;
+      const count = selectedCandidates.length;
+      
+      if (wasInactive) {
+        if ((refresh as any).accepted === false) {
+           setGalleryMessage(`Committed ${count} sample(s); identity activated but refresh failed: ${(refresh as any).message}. Start or reload pipeline to load gallery.`);
+        } else {
+           setGalleryMessage(`Committed ${count} sample(s); identity activated; refresh ${String((refresh as any).message || (refresh as any).accepted)}`);
+        }
+      } else {
+        if ((refresh as any).accepted === false) {
+          setGalleryMessage(`Committed ${count} sample(s); samples saved but refresh failed: ${(refresh as any).message}. Start or reload pipeline to load gallery.`);
+        } else {
+          setGalleryMessage(`Committed ${count}; refresh ${String((refresh as any).message || (refresh as any).accepted)}`);
+        }
+      }
+      
       setEnrollment(null);
       setSelectedCandidates([]);
       await loadIdentities(selectedIdentity.identity_key);
@@ -465,14 +506,31 @@ function GalleryView({ streams }: { streams: StreamInfo[] }) {
           <h2><Pencil size={16} />Identity</h2>
           {selectedIdentity ? (
             <>
+              {!selectedIdentity.active && (
+                <div style={{ color: 'var(--muted)', marginBottom: '1rem', fontWeight: 'bold' }}>This identity is inactive</div>
+              )}
               <label>
                 <span>Display name</span>
                 <input aria-label="Identity display name" value={draftName} onChange={(event) => setDraftName(event.target.value)} />
               </label>
               <div className="editor-actions">
                 <button onClick={saveIdentity}>Save</button>
-                <button onClick={deactivateIdentity}><CircleX size={16} />Deactivate</button>
+                {selectedIdentity.active ? (
+                  <button onClick={deactivateIdentity}><CircleX size={16} />Deactivate</button>
+                ) : (
+                  <button onClick={activateIdentity}><Check size={16} />Activate</button>
+                )}
+                <button onClick={() => setDeleteConfirm(true)}><Trash2 size={16} />Delete</button>
               </div>
+              {deleteConfirm && (
+                <div style={{ marginTop: '1rem', padding: '1rem', border: '1px solid var(--border)', borderRadius: '4px' }}>
+                  <p>Permanently delete {selectedIdentity.display_name || selectedIdentity.identity_key} and all {selectedIdentity.embedding_count} samples? This cannot be undone.</p>
+                  <div className="editor-actions" style={{ marginTop: '1rem' }}>
+                    <button onClick={() => setDeleteConfirm(false)}>Cancel</button>
+                    <button onClick={permanentlyDeleteIdentity} style={{ color: '#ef4444' }}>Delete permanently</button>
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div className="empty-inline">No identity selected</div>

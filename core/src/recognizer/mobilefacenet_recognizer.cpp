@@ -290,7 +290,9 @@ namespace veilsight {
             for (size_t i = 0; i < tracks.size(); ++i) {
                 if (i == track_index) continue;
                 if (!tracks[i].face || !tracks[i].face->fresh) continue;
-                if (iou_of(face.bbox, tracks[i].face->bbox) > kDuplicateFaceIou) return false;
+                if (iou_of(face.bbox, tracks[i].face->bbox) <= kDuplicateFaceIou) continue;
+                const FaceObservation& other = *tracks[i].face;
+                if (other.score > face.score || (other.score == face.score && i < track_index)) return false;
             }
 
             return true;

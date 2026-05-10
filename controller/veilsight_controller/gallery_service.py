@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -103,6 +102,8 @@ class GalleryService:
             raise HTTPException(status_code=410, detail={"error": "enrollment_candidate_expired"})
         if not candidate_ids:
             raise HTTPException(status_code=400, detail={"error": "candidate_ids_required"})
+        if self.store.ensure_identity_active(identity_key) is None:
+            raise HTTPException(status_code=404, detail={"error": "identity_not_found"})
 
         created: list[GalleryEmbedding] = []
         for candidate_id in candidate_ids:

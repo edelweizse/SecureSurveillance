@@ -174,6 +174,31 @@ class GalleryStore:
         updated = self.update_identity(identity_key, active=False)
         return updated is not None
 
+    def delete_identity(self, identity_key: str) -> bool:
+        validate_identity_key(identity_key)
+        with self.connect() as conn:
+            if not conn.execute("SELECT 1 FROM identities WHERE identity_key = ?", (identity_key,)).fetchone():
+                return False
+            conn.execute("DELETE FROM face_embeddings WHERE identity_key = ?", (identity_key,))
+            conn.execute("DELETE FROM identities WHERE identity_key = ?", (identity_key,))
+            conn.commit()
+        return True
+
+    def ensure_identity_active(self, identity_key: str) -> GalleryIdentity | None:
+        validate_identity_key(identity_key)
+        identity = self.get_identity(identity_key)
+        if identity is None:
+            return None
+        if not identity.active:
+            with self.connect() as conn:
+                conn.execute(
+                    "UPDATE identities SET active = 1, updated_at_ms = ? WHERE identity_key = ?",
+                    (now_ms(), identity_key),
+                )
+                conn.commit()
+            identity = self.get_identity(identity_key)
+        return identity
+
     def list_embeddings(self, identity_key: str) -> list[GalleryEmbedding]:
         with self.connect() as conn:
             rows = conn.execute(

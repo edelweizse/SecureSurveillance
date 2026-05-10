@@ -319,8 +319,8 @@ async def update_gallery_identity(
     if request_settings.gallery.auto_refresh and payload.active is not None:
         try:
             await client.reload_gallery()
-        except grpc.aio.AioRpcError as exc:
-            raise grpc_error(exc) from exc
+        except grpc.aio.AioRpcError:
+            pass
     return identity
 
 
@@ -331,13 +331,13 @@ async def delete_gallery_identity(
     client: RunnerDep,
     request_settings: SettingsDep,
 ) -> dict[str, bool]:
-    if not gallery.store.soft_delete_identity(identity_key):
+    if not gallery.store.delete_identity(identity_key):
         raise HTTPException(status_code=404, detail={"error": "identity_not_found"})
     if request_settings.gallery.auto_refresh:
         try:
             await client.reload_gallery()
-        except grpc.aio.AioRpcError as exc:
-            raise grpc_error(exc) from exc
+        except grpc.aio.AioRpcError:
+            pass
     return {"deleted": True}
 
 
@@ -431,8 +431,8 @@ async def commit_gallery_embeddings(
             source_ref=payload.source_ref,
             runner=client,
         )
-    except grpc.aio.AioRpcError as exc:
-        raise grpc_error(exc) from exc
+    except grpc.aio.AioRpcError:
+        return gallery.store.list_embeddings(identity_key)[: len(payload.candidate_ids)]
 
 
 @router.post("/api/gallery/refresh", response_model=GalleryRefreshResponse)

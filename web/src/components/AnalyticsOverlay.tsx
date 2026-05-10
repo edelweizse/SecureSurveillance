@@ -154,7 +154,9 @@ export function AnalyticsOverlay({ snapshot, layers, drawMode, onCreateRule, onU
         ctx.arc(foot.x, foot.y, 3.5, 0, Math.PI * 2);
         ctx.fill();
         const recognition = track.recognition_state ? ` ${track.recognition_state}` : "";
-        ctx.fillText(`id:${track.id}${recognition} ${track.dwell_s.toFixed(1)}s`, box.x + 4, Math.max(14, box.y - 4));
+        const identity = track.identity_key || `id:${track.id}`;
+        const confidence = track.identity_key && track.identity_confidence !== undefined ? ` ${(track.identity_confidence * 100).toFixed(0)}%` : "";
+        ctx.fillText(`${identity}${recognition}${confidence} ${track.dwell_s.toFixed(1)}s`, box.x + 4, Math.max(14, box.y - 4));
       }
     }
 

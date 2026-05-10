@@ -228,10 +228,10 @@ modules:
      embedding_dim: 128
      ncnn_threads: 1
      cache_ttl_frames: 900
-     min_face_score: 0.70
+     min_face_score: 0.30
      min_face_size_px: 0
      min_inter_eye_px: 0
-     max_roll_deg: 100.0
+     max_roll_deg: 180.0
      max_yaw_offset_ratio: 0.99
 
   identity:

@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+import grpc
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -101,6 +102,24 @@ def test_gallery_store_identity_and_embedding_lifecycle(tmp_path: Path) -> None:
     assert store.set_embedding_active(embedding.id, False).active is False  # type: ignore[union-attr]
 
 
+def test_store_hard_delete(tmp_path: Path) -> None:
+    store = GalleryStore(tmp_path / "gallery.sqlite3")
+    identity = store.create_identity("Alice", "alice")
+    store.add_embedding(
+        identity_key=identity.identity_key,
+        embedding=[0.01] * 128,
+        source_type="upload",
+        source_ref="alice.jpg",
+        quality={"usable": True},
+        face_bbox={"x": 1, "y": 2, "w": 3, "h": 4},
+    )
+
+    assert store.delete_identity(identity.identity_key) is True
+    assert store.get_identity(identity.identity_key) is None
+    assert store.list_embeddings(identity.identity_key) == []
+    assert store.delete_identity(identity.identity_key) is False
+
+
 def test_candidate_cache_expiry(tmp_path: Path) -> None:
     service = GalleryService(GalleryTestSettings(tmp_path / "gallery.sqlite3"))
     runner = FakeRunner()
@@ -146,6 +165,131 @@ def test_api_commit_flow_with_fake_runner(tmp_path: Path) -> None:
         assert commit.status_code == 200
         assert commit.json()[0]["identity_key"] == "alice"
         assert fake.reloads == 1
+    finally:
+        RunnerClientRegistry.gallery_service = previous_gallery
+        RunnerClientRegistry.client = previous_runner
+
+
+def test_api_permanent_delete(tmp_path: Path) -> None:
+    service = GalleryService(GalleryTestSettings(tmp_path / "gallery.sqlite3"))
+    fake = FakeRunner()
+    previous_gallery = RunnerClientRegistry.gallery_service
+    previous_runner = RunnerClientRegistry.client
+    RunnerClientRegistry.gallery_service = service
+    RunnerClientRegistry.client = fake  # type: ignore[assignment]
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/gallery/identities",
+            json={"display_name": "Alice", "identity_key": "alice", "active": True},
+        )
+        assert created.status_code == 200
+
+        deleted = client.delete("/api/gallery/identities/alice")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"deleted": True}
+
+        identities = client.get("/api/gallery/identities")
+        assert identities.status_code == 200
+        assert all(identity["identity_key"] != "alice" for identity in identities.json())
+
+        deleted_again = client.delete("/api/gallery/identities/alice")
+        assert deleted_again.status_code == 404
+    finally:
+        RunnerClientRegistry.gallery_service = previous_gallery
+        RunnerClientRegistry.client = previous_runner
+
+
+def test_inactive_enrollment_auto_activate(tmp_path: Path) -> None:
+    service = GalleryService(GalleryTestSettings(tmp_path / "gallery.sqlite3"))
+    fake = FakeRunner()
+    previous_gallery = RunnerClientRegistry.gallery_service
+    previous_runner = RunnerClientRegistry.client
+    RunnerClientRegistry.gallery_service = service
+    RunnerClientRegistry.client = fake  # type: ignore[assignment]
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/gallery/identities",
+            json={"display_name": "Alice", "identity_key": "alice", "active": False},
+        )
+        assert created.status_code == 200
+
+        upload = client.post(
+            "/api/gallery/enrollment-candidates",
+            files={"file": ("alice.jpg", b"fake", "image/jpeg")},
+        )
+        assert upload.status_code == 200
+        enrollment_id = upload.json()["enrollment_id"]
+
+        commit = client.post(
+            "/api/gallery/identities/alice/embeddings",
+            json={"enrollment_id": enrollment_id, "candidate_ids": ["face-0"]},
+        )
+        assert commit.status_code == 200
+
+        identities = client.get("/api/gallery/identities")
+        assert identities.status_code == 200
+        alice = next(identity for identity in identities.json() if identity["identity_key"] == "alice")
+        assert alice["active"] is True
+
+        embeddings = client.get("/api/gallery/identities/alice/embeddings")
+        assert embeddings.status_code == 200
+        assert embeddings.json()[0]["active"] is True
+    finally:
+        RunnerClientRegistry.gallery_service = previous_gallery
+        RunnerClientRegistry.client = previous_runner
+
+
+def test_reload_failure_resilience(tmp_path: Path) -> None:
+    class FailingRunner(FakeRunner):
+        async def reload_gallery(self) -> dict[str, Any]:
+            self.reloads += 1
+            raise grpc.aio.AioRpcError(
+                grpc.StatusCode.UNAVAILABLE,
+                grpc.aio.Metadata(),
+                grpc.aio.Metadata(),
+                "reload failed",
+            )
+
+    service = GalleryService(GalleryTestSettings(tmp_path / "gallery.sqlite3"))
+    failing = FailingRunner()
+    previous_gallery = RunnerClientRegistry.gallery_service
+    previous_runner = RunnerClientRegistry.client
+    RunnerClientRegistry.gallery_service = service
+    RunnerClientRegistry.client = failing  # type: ignore[assignment]
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    try:
+        created = client.post(
+            "/api/gallery/identities",
+            json={"display_name": "Alice", "identity_key": "alice", "active": True},
+        )
+        assert created.status_code == 200
+
+        deleted = client.delete("/api/gallery/identities/alice")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"deleted": True}
+        assert service.store.get_identity("alice") is None
+
+        created = client.post(
+            "/api/gallery/identities",
+            json={"display_name": "Bob", "identity_key": "bob", "active": True},
+        )
+        assert created.status_code == 200
+        patched = client.patch("/api/gallery/identities/bob", json={"active": False})
+        assert patched.status_code == 200
+        assert patched.json()["active"] is False
+        assert service.store.get_identity("bob").active is False  # type: ignore[union-attr]
+
+        refresh = client.post("/api/gallery/refresh")
+        assert refresh.status_code == 502
+        assert refresh.json()["detail"]["error"] == "runner_grpc_error"
     finally:
         RunnerClientRegistry.gallery_service = previous_gallery
         RunnerClientRegistry.client = previous_runner

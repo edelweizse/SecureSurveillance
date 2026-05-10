@@ -378,6 +378,64 @@ describe("dashboard", () => {
     expect(await screen.findByText(/gallery reloaded/)).toBeInTheDocument();
   });
 
+  it("permanently deletes a gallery identity after confirmation", async () => {
+    const baseFetch = mockFetch();
+    let identities = [{ identity_key: "alice", display_name: "Alice", active: true, embedding_count: 1 }];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/gallery/identities" && !init?.method) return Response.json(identities);
+      if (url === "/api/gallery/identities/alice" && init?.method === "DELETE") {
+        identities = [];
+        return Response.json({ deleted: true });
+      }
+      return baseFetch(url, init);
+    });
+    global.fetch = fetchMock as any;
+
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText(/Permanently delete/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Delete permanently"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/identities/alice", { method: "DELETE" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/gallery/refresh", { method: "POST" });
+    await waitFor(() => expect(screen.queryByText("Alice")).not.toBeInTheDocument());
+  });
+
+  it("commits candidates for inactive identities and shows activation message", async () => {
+    const baseFetch = mockFetch();
+    let identities = [{ identity_key: "alice", display_name: "Alice", active: false, embedding_count: 0 }];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/gallery/identities" && !init?.method) return Response.json(identities);
+      if (url === "/api/gallery/identities/alice/embeddings" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { candidate_ids?: string[] };
+        identities = identities.map((identity) =>
+          identity.identity_key === "alice"
+            ? { ...identity, active: true, embedding_count: identity.embedding_count + (body.candidate_ids?.length ?? 0) }
+            : identity
+        );
+        return Response.json([{ id: 8, identity_key: "alice", model: "mobilefacenet", dim: 128, active: true, source_type: "upload" }]);
+      }
+      return baseFetch(url, init);
+    });
+    global.fetch = fetchMock as any;
+
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    expect(await screen.findByText(/This identity is inactive/)).toBeInTheDocument();
+
+    const file = new File(["image"], "alice.jpg", { type: "image/jpeg" });
+    await userEvent.upload(screen.getByLabelText("Upload enrollment photo"), file);
+    expect(await screen.findByText("face-0 · usable")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Commit selected"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/identities/alice/embeddings", expect.objectContaining({ method: "POST" })));
+    expect(fetchMock).toHaveBeenCalledWith("/api/gallery/refresh", { method: "POST" });
+    expect(await screen.findByText(/identity activated/)).toBeInTheDocument();
+  });
+
   it("captures webcam and runner stream candidates", async () => {
     const fetchMock = mockFetch();
     global.fetch = fetchMock as any;
