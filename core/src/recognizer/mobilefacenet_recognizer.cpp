@@ -1,5 +1,7 @@
 #include <recognizer/recognizer.hpp>
 
+#include <face_detector/face_detector.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -32,6 +34,11 @@ namespace veilsight {
 
         struct Gallery {
             std::vector<GalleryEntry> entries;
+        };
+
+        struct SharedGallery {
+            mutable std::mutex mutex;
+            std::shared_ptr<const Gallery> gallery = std::make_shared<Gallery>();
         };
 
         enum class TrackRecognitionState {
@@ -306,15 +313,138 @@ namespace veilsight {
             return out;
         }
 
+        std::vector<float> extract_mobilefacenet_embedding(ncnn::Net& net,
+                                                           ncnn::PoolAllocator& workspace_pool_allocator,
+                                                           const RecognizerModuleConfig& cfg,
+                                                           const cv::Mat& bgr,
+                                                           const FaceObservation& face) {
+            if (bgr.empty()) {
+                throw std::runtime_error("recognition image is empty");
+            }
+            if (bgr.type() != CV_8UC3) {
+                throw std::runtime_error("recognition image must be CV_8UC3");
+            }
+
+            std::array<float, 10> src{};
+            for (int i = 0; i < 5; ++i) {
+                src[static_cast<size_t>(i * 2)] = face.landmarks[static_cast<size_t>(i)].x;
+                src[static_cast<size_t>(i * 2 + 1)] = face.landmarks[static_cast<size_t>(i)].y;
+            }
+
+            static constexpr std::array<float, 10> canonical = {
+                38.2946f, 51.6963f,
+                73.5318f, 51.5014f,
+                56.0252f, 71.7366f,
+                41.5493f, 92.3655f,
+                70.7299f, 92.2041f,
+            };
+
+            float tm_src_to_dst[6] = {};
+            float tm_dst_to_src[6] = {};
+            ncnn::get_affine_transform(src.data(), canonical.data(), 5, tm_src_to_dst);
+            ncnn::invert_affine_transform(tm_src_to_dst, tm_dst_to_src);
+
+            std::vector<unsigned char> aligned(
+                static_cast<size_t>(cfg.input_w) * static_cast<size_t>(cfg.input_h) * 3u);
+            ncnn::warpaffine_bilinear_c3(
+                bgr.data,
+                bgr.cols,
+                bgr.rows,
+                static_cast<int>(bgr.step),
+                aligned.data(),
+                cfg.input_w,
+                cfg.input_h,
+                cfg.input_w * 3,
+                tm_dst_to_src);
+
+            ncnn::Mat in = ncnn::Mat::from_pixels(
+                aligned.data(),
+                ncnn::Mat::PIXEL_BGR2RGB,
+                cfg.input_w,
+                cfg.input_h);
+
+            ncnn::Extractor ex = net.create_extractor();
+            ex.set_light_mode(true);
+
+            thread_local ncnn::UnlockedPoolAllocator blob_pool_allocator;
+            thread_local bool blob_pool_initialized = false;
+            if (!blob_pool_initialized) {
+                blob_pool_allocator.set_size_compare_ratio(0.0f);
+                blob_pool_initialized = true;
+            }
+            ex.set_blob_allocator(&blob_pool_allocator);
+            ex.set_workspace_allocator(&workspace_pool_allocator);
+
+            if (ex.input(cfg.input_blob.c_str(), in) != 0) {
+                throw std::runtime_error("MobileFaceNet input failed for blob: " + cfg.input_blob);
+            }
+
+            ncnn::Mat fc1;
+            if (ex.extract(cfg.output_blob.c_str(), fc1) != 0) {
+                throw std::runtime_error("MobileFaceNet output failed for blob: " + cfg.output_blob);
+            }
+            if (static_cast<int>(fc1.total()) != cfg.embedding_dim) {
+                throw std::runtime_error("MobileFaceNet output dimension mismatch");
+            }
+
+            const float* data = static_cast<const float*>(fc1.data);
+            if (!data) throw std::runtime_error("MobileFaceNet output is empty");
+
+            std::vector<float> embedding(static_cast<size_t>(cfg.embedding_dim));
+            std::copy(data, data + cfg.embedding_dim, embedding.begin());
+            if (!normalize_l2(embedding)) {
+                throw std::runtime_error("MobileFaceNet output has zero norm");
+            }
+            return embedding;
+        }
+
+        std::vector<std::string> enrollment_reject_reasons(const FaceObservation& face,
+                                                           const RecognizerModuleConfig& cfg) {
+            std::vector<std::string> reasons;
+            if (face.landmark_count != 5) reasons.emplace_back("missing_landmarks");
+            if (face.score < cfg.min_face_score) reasons.emplace_back("low_face_score");
+            if (face.bbox.w < cfg.min_face_size_px || face.bbox.h < cfg.min_face_size_px) {
+                reasons.emplace_back("face_too_small");
+            }
+            if (face.landmark_count == 5) {
+                const PointF& left_eye = face.landmarks[0];
+                const PointF& right_eye = face.landmarks[1];
+                const PointF& nose = face.landmarks[2];
+                const PointF& left_mouth = face.landmarks[3];
+                const PointF& right_mouth = face.landmarks[4];
+                const float inter_eye = distance(left_eye, right_eye);
+                if (inter_eye < cfg.min_inter_eye_px) reasons.emplace_back("inter_eye_too_small");
+                const float roll_deg = std::abs(std::atan2(right_eye.y - left_eye.y,
+                                                           right_eye.x - left_eye.x)) *
+                                       180.0f / kPi;
+                if (roll_deg > cfg.max_roll_deg) reasons.emplace_back("roll_too_large");
+                const PointF eye_mid{
+                    (left_eye.x + right_eye.x) * 0.5f,
+                    (left_eye.y + right_eye.y) * 0.5f,
+                };
+                const PointF mouth_mid{
+                    (left_mouth.x + right_mouth.x) * 0.5f,
+                    (left_mouth.y + right_mouth.y) * 0.5f,
+                };
+                if (!(nose.y > eye_mid.y && nose.y < mouth_mid.y) || !(mouth_mid.y > nose.y)) {
+                    reasons.emplace_back("invalid_landmark_geometry");
+                }
+                if (inter_eye > 0.0f && std::abs(nose.x - eye_mid.x) / inter_eye > cfg.max_yaw_offset_ratio) {
+                    reasons.emplace_back("yaw_too_large");
+                }
+            }
+            return reasons;
+        }
+
         class MobileFaceNetRecognizer final : public IRecognizer {
         public:
             MobileFaceNetRecognizer(RecognizerModuleConfig cfg,
-                                    std::shared_ptr<const Gallery> gallery,
+                                    std::shared_ptr<SharedGallery> gallery,
                                     std::shared_ptr<SharedTrackState> state)
                 : cfg_(std::move(cfg)),
                   gallery_(std::move(gallery)),
                   state_(std::move(state)) {
-                if (!gallery_) gallery_ = std::make_shared<Gallery>();
+                if (!gallery_) gallery_ = std::make_shared<SharedGallery>();
                 if (!state_) state_ = std::make_shared<SharedTrackState>();
 
                 net_.opt.use_vulkan_compute = false;
@@ -343,9 +473,9 @@ namespace veilsight {
                 for (size_t i = 0; i < out.tracks.size(); ++i) {
                     Box& track = out.tracks[i];
                     apply_no_decision(track);
-                    if (track.id < 0) continue;
+                    const bool cacheable_track = track.id >= 0;
 
-                    if (apply_cached_decision(task.stream_id, track.id, task.frame_id, track)) {
+                    if (cacheable_track && apply_cached_decision(task.stream_id, track.id, task.frame_id, track)) {
                         continue;
                     }
 
@@ -353,17 +483,18 @@ namespace veilsight {
                         continue;
                     }
 
-                    if (!mark_in_progress(task.stream_id, track.id, task.frame_id, track)) {
+                    if (cacheable_track && !mark_in_progress(task.stream_id, track.id, task.frame_id, track)) {
                         continue;
                     }
 
                     try {
                         const std::vector<float> embedding = extract_embedding(task.frame, *track.face);
-                        const MatchResult match = best_gallery_match(embedding, *gallery_);
+                        const auto gallery = current_gallery();
+                        const MatchResult match = best_gallery_match(embedding, *gallery);
 
                         TrackDecision decision;
                         decision.last_seen_frame = task.frame_id;
-                        if (!gallery_->entries.empty() && match.score >= cfg_.unknown_threshold) {
+                        if (!gallery->entries.empty() && match.score >= cfg_.unknown_threshold) {
                             decision.state = TrackRecognitionState::DecidedKnown;
                             decision.identity_key = match.identity_key;
                             decision.identity_confidence = match.score;
@@ -372,14 +503,20 @@ namespace veilsight {
                         } else {
                             decision.state = TrackRecognitionState::DecidedUnknown;
                             decision.identity_key.clear();
-                            decision.identity_confidence = gallery_->entries.empty() ? 0.0f : match.score;
+                            decision.identity_confidence = gallery->entries.empty() ? 0.0f : match.score;
                             decision.privacy_action = "anonymize";
                             decision.recognition_state = "unknown";
                         }
-                        finish_decision(task.stream_id, track.id, decision, track);
+                        if (cacheable_track) {
+                            finish_decision(task.stream_id, track.id, decision, track);
+                        } else {
+                            apply_decision(track, decision);
+                        }
                     } catch (...) {
                         track.recognition_state = "failed";
-                        clear_in_progress(task.stream_id, track.id);
+                        if (cacheable_track) {
+                            clear_in_progress(task.stream_id, track.id);
+                        }
                     }
                 }
 
@@ -390,6 +527,11 @@ namespace veilsight {
             }
 
         private:
+            std::shared_ptr<const Gallery> current_gallery() const {
+                std::lock_guard lk(gallery_->mutex);
+                return gallery_->gallery ? gallery_->gallery : std::make_shared<Gallery>();
+            }
+
             void cleanup_cache(const std::string& stream_id, int64_t frame_id) {
                 std::lock_guard lk(state_->mutex);
                 auto stream_it = state_->streams.find(stream_id);
@@ -482,86 +624,11 @@ namespace veilsight {
                 if (!frame || frame->inf.empty()) {
                     throw std::runtime_error("recognition frame has no inference image");
                 }
-                const cv::Mat& bgr = frame->inf;
-                if (bgr.type() != CV_8UC3) {
-                    throw std::runtime_error("recognition image must be CV_8UC3");
-                }
-
-                std::array<float, 10> src{};
-                for (int i = 0; i < 5; ++i) {
-                    src[static_cast<size_t>(i * 2)] = face.landmarks[static_cast<size_t>(i)].x;
-                    src[static_cast<size_t>(i * 2 + 1)] = face.landmarks[static_cast<size_t>(i)].y;
-                }
-
-                static constexpr std::array<float, 10> canonical = {
-                    38.2946f, 51.6963f,
-                    73.5318f, 51.5014f,
-                    56.0252f, 71.7366f,
-                    41.5493f, 92.3655f,
-                    70.7299f, 92.2041f,
-                };
-
-                float tm_src_to_dst[6] = {};
-                float tm_dst_to_src[6] = {};
-                ncnn::get_affine_transform(src.data(), canonical.data(), 5, tm_src_to_dst);
-                ncnn::invert_affine_transform(tm_src_to_dst, tm_dst_to_src);
-
-                std::vector<unsigned char> aligned(
-                    static_cast<size_t>(cfg_.input_w) * static_cast<size_t>(cfg_.input_h) * 3u);
-                ncnn::warpaffine_bilinear_c3(
-                    bgr.data,
-                    bgr.cols,
-                    bgr.rows,
-                    static_cast<int>(bgr.step),
-                    aligned.data(),
-                    cfg_.input_w,
-                    cfg_.input_h,
-                    cfg_.input_w * 3,
-                    tm_dst_to_src);
-
-                ncnn::Mat in = ncnn::Mat::from_pixels(
-                    aligned.data(),
-                    ncnn::Mat::PIXEL_BGR2RGB,
-                    cfg_.input_w,
-                    cfg_.input_h);
-
-                ncnn::Extractor ex = net_.create_extractor();
-                ex.set_light_mode(true);
-
-                thread_local ncnn::UnlockedPoolAllocator blob_pool_allocator;
-                thread_local bool blob_pool_initialized = false;
-                if (!blob_pool_initialized) {
-                    blob_pool_allocator.set_size_compare_ratio(0.0f);
-                    blob_pool_initialized = true;
-                }
-                ex.set_blob_allocator(&blob_pool_allocator);
-                ex.set_workspace_allocator(&workspace_pool_allocator_);
-
-                if (ex.input(cfg_.input_blob.c_str(), in) != 0) {
-                    throw std::runtime_error("MobileFaceNet input failed for blob: " + cfg_.input_blob);
-                }
-
-                ncnn::Mat fc1;
-                if (ex.extract(cfg_.output_blob.c_str(), fc1) != 0) {
-                    throw std::runtime_error("MobileFaceNet output failed for blob: " + cfg_.output_blob);
-                }
-                if (static_cast<int>(fc1.total()) != cfg_.embedding_dim) {
-                    throw std::runtime_error("MobileFaceNet output dimension mismatch");
-                }
-
-                const float* data = static_cast<const float*>(fc1.data);
-                if (!data) throw std::runtime_error("MobileFaceNet output is empty");
-
-                std::vector<float> embedding(static_cast<size_t>(cfg_.embedding_dim));
-                std::copy(data, data + cfg_.embedding_dim, embedding.begin());
-                if (!normalize_l2(embedding)) {
-                    throw std::runtime_error("MobileFaceNet output has zero norm");
-                }
-                return embedding;
+                return extract_mobilefacenet_embedding(net_, workspace_pool_allocator_, cfg_, frame->inf, face);
             }
 
             RecognizerModuleConfig cfg_;
-            std::shared_ptr<const Gallery> gallery_;
+            std::shared_ptr<SharedGallery> gallery_;
             std::shared_ptr<SharedTrackState> state_;
             ncnn::Net net_;
             mutable ncnn::PoolAllocator workspace_pool_allocator_;
@@ -571,8 +638,10 @@ namespace veilsight {
         public:
             explicit MobileFaceNetRecognizerFactory(RecognizerModuleConfig cfg)
                 : cfg_(std::move(cfg)),
-                  gallery_(load_gallery(cfg_)),
-                  state_(std::make_shared<SharedTrackState>()) {}
+                  gallery_(std::make_shared<SharedGallery>()),
+                  state_(std::make_shared<SharedTrackState>()) {
+                gallery_->gallery = load_gallery(cfg_);
+            }
 
             std::unique_ptr<IRecognizer> create() const override {
                 return std::make_unique<MobileFaceNetRecognizer>(cfg_, gallery_, state_);
@@ -582,11 +651,99 @@ namespace veilsight {
                 return std::max(1, cfg_.ncnn_threads);
             }
 
+            bool reload_gallery(std::string* error) override {
+                try {
+                    auto next = load_gallery(cfg_);
+                    {
+                        std::lock_guard lk(gallery_->mutex);
+                        gallery_->gallery = std::move(next);
+                    }
+                    {
+                        std::lock_guard lk(state_->mutex);
+                        state_->streams.clear();
+                    }
+                    return true;
+                } catch (const std::exception& e) {
+                    if (error) *error = e.what();
+                    return false;
+                }
+            }
+
         private:
             RecognizerModuleConfig cfg_;
-            std::shared_ptr<const Gallery> gallery_;
+            std::shared_ptr<SharedGallery> gallery_;
             std::shared_ptr<SharedTrackState> state_;
         };
+    }
+
+    EnrollmentAnalysisResult analyze_mobilefacenet_enrollment_image(
+        const FaceDetectorModuleConfig& face_cfg,
+        const RecognizerModuleConfig& recognizer_cfg,
+        const cv::Mat& bgr) {
+        EnrollmentAnalysisResult out;
+        out.image_width = bgr.cols;
+        out.image_height = bgr.rows;
+        if (bgr.empty()) {
+            out.ok = false;
+            out.message = "image decode produced an empty frame";
+            return out;
+        }
+        if (bgr.type() != CV_8UC3) {
+            out.ok = false;
+            out.message = "enrollment image must decode to CV_8UC3";
+            return out;
+        }
+
+        try {
+            auto detector = create_face_detector(face_cfg);
+            FaceDetectorRunConfig run;
+            run.input_w = face_cfg.scrfd.input_w;
+            run.input_h = face_cfg.scrfd.input_h;
+            const auto faces = detector ? detector->detect_faces(bgr, run) : std::vector<FaceObservation>{};
+
+            ncnn::Net net;
+            net.opt.use_vulkan_compute = false;
+            net.opt.num_threads = std::max(1, recognizer_cfg.ncnn_threads);
+            ncnn::PoolAllocator workspace_pool_allocator;
+            workspace_pool_allocator.set_size_compare_ratio(0.0f);
+            const std::string param = resolve_path_or_throw(recognizer_cfg.param_path);
+            const std::string bin = resolve_path_or_throw(recognizer_cfg.bin_path);
+            if (net.load_param(param.c_str()) != 0) {
+                throw std::runtime_error("Failed to load MobileFaceNet param: " + param);
+            }
+            if (net.load_model(bin.c_str()) != 0) {
+                throw std::runtime_error("Failed to load MobileFaceNet weights: " + bin);
+            }
+
+            out.candidates.reserve(faces.size());
+            for (const auto& face : faces) {
+                EnrollmentAnalysisCandidate candidate;
+                candidate.face = face;
+                candidate.reject_reasons = enrollment_reject_reasons(face, recognizer_cfg);
+                candidate.usable = candidate.reject_reasons.empty();
+                if (face.landmark_count == 5) {
+                    try {
+                        candidate.embedding = extract_mobilefacenet_embedding(
+                            net,
+                            workspace_pool_allocator,
+                            recognizer_cfg,
+                            bgr,
+                            face);
+                    } catch (const std::exception& e) {
+                        candidate.usable = false;
+                        candidate.reject_reasons.emplace_back(std::string("embedding_failed: ") + e.what());
+                    }
+                }
+                out.candidates.push_back(std::move(candidate));
+            }
+            out.ok = true;
+            out.message = faces.empty() ? "no faces detected" : "ok";
+            return out;
+        } catch (const std::exception& e) {
+            out.ok = false;
+            out.message = e.what();
+            return out;
+        }
     }
 
     std::unique_ptr<IRecognizerFactory> create_mobilefacenet_recognizer_factory(

@@ -1,6 +1,7 @@
 import {
   Activity,
   AreaChart,
+  Camera,
   Check,
   CircleX,
   FileCheck,
@@ -14,11 +15,22 @@ import {
   Route,
   Square,
   Trash2,
-  TrendingUp
+  TrendingUp,
+  Upload,
+  UserPlus,
+  Users
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalyticsRule, AnalyticsSnapshot, DrawMode, OverlayLayers, Point } from "./analytics/types";
-import { api, type ConfigFileInfo, type PipelineStatus, type StreamInfo } from "./api/client";
+import {
+  api,
+  type ConfigFileInfo,
+  type EnrollmentCandidateResponse,
+  type GalleryEmbedding,
+  type GalleryIdentity,
+  type PipelineStatus,
+  type StreamInfo
+} from "./api/client";
 import { connectJsonWebSocket } from "./api/ws";
 import { AnalyticsOverlay } from "./components/AnalyticsOverlay";
 import { WebRTCPlayer, type StreamProtocol } from "./components/WebRTCPlayer";
@@ -279,7 +291,281 @@ function StreamWorkspace({
   );
 }
 
+async function captureWebcamBlob(): Promise<Blob> {
+  const media = await navigator.mediaDevices.getUserMedia({ video: true });
+  try {
+    const video = document.createElement("video");
+    video.srcObject = media;
+    video.muted = true;
+    await video.play().catch(() => undefined);
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    return await new Promise<Blob>((resolve) => {
+      canvas.toBlob((blob) => resolve(blob ?? new Blob([], { type: "image/jpeg" })), "image/jpeg", 0.9);
+    });
+  } finally {
+    media.getTracks().forEach((track) => track.stop());
+  }
+}
+
+function GalleryView({ streams }: { streams: StreamInfo[] }) {
+  const [identities, setIdentities] = useState<GalleryIdentity[]>([]);
+  const [selectedKey, setSelectedKey] = useState("");
+  const [embeddings, setEmbeddings] = useState<GalleryEmbedding[]>([]);
+  const [search, setSearch] = useState("");
+  const [draftName, setDraftName] = useState("");
+  const [newName, setNewName] = useState("");
+  const [source, setSource] = useState<"upload" | "webcam" | "stream">("upload");
+  const [enrollment, setEnrollment] = useState<EnrollmentCandidateResponse | null>(null);
+  const [selectedCandidates, setSelectedCandidates] = useState<string[]>([]);
+  const [galleryMessage, setGalleryMessage] = useState("");
+  const [pending, setPending] = useState(false);
+  const [streamChoice, setStreamChoice] = useState("");
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  async function loadIdentities(nextSelected?: string) {
+    const rows = await api.galleryIdentities();
+    setIdentities(rows);
+    const key = nextSelected || selectedKey || rows[0]?.identity_key || "";
+    setSelectedKey(key);
+    const selected = rows.find((identity) => identity.identity_key === key);
+    setDraftName(selected?.display_name || selected?.identity_key || "");
+  }
+
+  useEffect(() => {
+    void loadIdentities();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedKey) {
+      setEmbeddings([]);
+      return;
+    }
+    void api.galleryEmbeddings(selectedKey).then(setEmbeddings).catch(() => setEmbeddings([]));
+    const identity = identities.find((item) => item.identity_key === selectedKey);
+    setDraftName(identity?.display_name || identity?.identity_key || "");
+  }, [selectedKey, identities]);
+
+  const filteredIdentities = identities.filter((identity) => {
+    const haystack = `${identity.identity_key} ${identity.display_name ?? ""}`.toLowerCase();
+    return haystack.includes(search.toLowerCase());
+  });
+  const selectedIdentity = identities.find((identity) => identity.identity_key === selectedKey);
+  const previewUrl = enrollment ? `/api/gallery/enrollment-candidates/${enrollment.enrollment_id}/image/${enrollment.image_id}` : "";
+  const selectedStream = streams.find((stream) => streamKey(stream) === streamChoice) ?? streams[0];
+
+  async function createIdentity() {
+    if (!newName.trim()) return;
+    const created = await api.createGalleryIdentity({ display_name: newName.trim() });
+    setNewName("");
+    await loadIdentities(created.identity_key);
+  }
+
+  async function saveIdentity() {
+    if (!selectedIdentity) return;
+    const updated = await api.updateGalleryIdentity(selectedIdentity.identity_key, { display_name: draftName, active: selectedIdentity.active });
+    setGalleryMessage(`Saved ${updated.identity_key}`);
+    await loadIdentities(updated.identity_key);
+  }
+
+  async function deactivateIdentity() {
+    if (!selectedIdentity) return;
+    const updated = await api.updateGalleryIdentity(selectedIdentity.identity_key, { active: false });
+    setGalleryMessage(`Deactivated ${updated.identity_key}`);
+    await loadIdentities(updated.identity_key);
+  }
+
+  async function analyzeBlob(blob: Blob, filename = "capture.jpg") {
+    setPending(true);
+    try {
+      const result = await api.enrollmentCandidates(blob, filename);
+      setEnrollment(result);
+      setSelectedCandidates(result.candidates.filter((candidate) => candidate.usable).map((candidate) => candidate.candidate_id));
+      setGalleryMessage(`${result.candidates.length} face candidates`);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function analyzeUpload(file?: File) {
+    if (!file) return;
+    await analyzeBlob(file, file.name);
+  }
+
+  async function analyzeWebcam() {
+    const blob = await captureWebcamBlob();
+    await analyzeBlob(blob, "webcam.jpg");
+  }
+
+  async function analyzeStream() {
+    if (!selectedStream) return;
+    setPending(true);
+    try {
+      const result = await api.enrollmentCandidatesFromStream(selectedStream.stream_id, selectedStream.profile);
+      setEnrollment(result);
+      setSelectedCandidates(result.candidates.filter((candidate) => candidate.usable).map((candidate) => candidate.candidate_id));
+      setGalleryMessage(`${result.candidates.length} face candidates`);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function commitCandidates() {
+    if (!selectedIdentity || !enrollment || selectedCandidates.length === 0) return;
+    setPending(true);
+    try {
+      await api.commitGalleryEmbeddings(selectedIdentity.identity_key, enrollment.enrollment_id, selectedCandidates);
+      const refresh = await api.refreshGallery().catch((error) => ({ accepted: false, message: String(error) }));
+      setGalleryMessage(`Committed ${selectedCandidates.length}; refresh ${String((refresh as any).message || (refresh as any).accepted)}`);
+      setEnrollment(null);
+      setSelectedCandidates([]);
+      await loadIdentities(selectedIdentity.identity_key);
+      setEmbeddings(await api.galleryEmbeddings(selectedIdentity.identity_key));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function removeEmbedding(id: number) {
+    await api.deleteGalleryEmbedding(id);
+    if (selectedKey) setEmbeddings(await api.galleryEmbeddings(selectedKey));
+    setGalleryMessage("Sample deactivated");
+  }
+
+  return (
+    <section className="gallery-view">
+      <aside className="gallery-list">
+        <h2><Users size={16} />Gallery</h2>
+        <input aria-label="Search identities" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search identities" />
+        <div className="identity-list">
+          {filteredIdentities.map((identity) => (
+            <button
+              key={identity.identity_key}
+              className={identity.identity_key === selectedKey ? "identity-row active" : "identity-row"}
+              onClick={() => setSelectedKey(identity.identity_key)}
+            >
+              <span>
+                <strong>{identity.display_name || identity.identity_key}</strong>
+                <small>{identity.identity_key}</small>
+              </span>
+              <small>{identity.active ? "active" : "inactive"} · {identity.embedding_count}</small>
+            </button>
+          ))}
+        </div>
+        <div className="new-identity">
+          <input aria-label="New identity name" value={newName} onChange={(event) => setNewName(event.target.value)} placeholder="New identity" />
+          <button onClick={createIdentity} title="Create identity"><UserPlus size={16} />Create</button>
+        </div>
+      </aside>
+
+      <section className="gallery-detail">
+        <div className="gallery-editor">
+          <h2><Pencil size={16} />Identity</h2>
+          {selectedIdentity ? (
+            <>
+              <label>
+                <span>Display name</span>
+                <input aria-label="Identity display name" value={draftName} onChange={(event) => setDraftName(event.target.value)} />
+              </label>
+              <div className="editor-actions">
+                <button onClick={saveIdentity}>Save</button>
+                <button onClick={deactivateIdentity}><CircleX size={16} />Deactivate</button>
+              </div>
+            </>
+          ) : (
+            <div className="empty-inline">No identity selected</div>
+          )}
+        </div>
+
+        <div className="sample-list">
+          <h2><Layers size={16} />Samples</h2>
+          {embeddings.length === 0 ? (
+            <div className="empty-inline">No samples</div>
+          ) : (
+            embeddings.map((embedding) => (
+              <div className="sample-row" key={embedding.id}>
+                <span>#{embedding.id} · {embedding.source_type || "manual"} · {embedding.active ? "active" : "inactive"}</span>
+                <button onClick={() => removeEmbedding(embedding.id)} title={`Deactivate sample ${embedding.id}`}><Trash2 size={15} /></button>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="enrollment-panel">
+          <h2><Camera size={16} />Enrollment</h2>
+          <div className="tab-row">
+            <button className={source === "upload" ? "active" : ""} onClick={() => setSource("upload")}><Upload size={16} />Upload photo</button>
+            <button className={source === "webcam" ? "active" : ""} onClick={() => setSource("webcam")}><Camera size={16} />Browser webcam</button>
+            <button className={source === "stream" ? "active" : ""} onClick={() => setSource("stream")}><RefreshCw size={16} />Runner snapshot</button>
+          </div>
+          {source === "upload" && (
+            <div className="source-row">
+              <input ref={fileRef} aria-label="Upload enrollment photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void analyzeUpload(event.target.files?.[0])} />
+            </div>
+          )}
+          {source === "webcam" && <button onClick={analyzeWebcam} disabled={pending}>Capture webcam</button>}
+          {source === "stream" && (
+            <div className="source-row">
+              <select aria-label="Runner stream" value={streamChoice || (streams[0] ? streamKey(streams[0]) : "")} onChange={(event) => setStreamChoice(event.target.value)}>
+                {streams.map((stream) => <option key={streamKey(stream)} value={streamKey(stream)}>{streamKey(stream)}</option>)}
+              </select>
+              <button onClick={analyzeStream} disabled={!selectedStream || pending}>Capture stream</button>
+            </div>
+          )}
+          {enrollment && (
+            <div className="candidate-preview">
+              <div className="preview-frame">
+                <img src={previewUrl} alt="Enrollment preview" />
+                {enrollment.candidates.map((candidate) => (
+                  <button
+                    key={candidate.candidate_id}
+                    className={selectedCandidates.includes(candidate.candidate_id) ? "face-box active" : "face-box"}
+                    style={{
+                      left: `${(candidate.bbox.x / Math.max(1, candidate.image_width)) * 100}%`,
+                      top: `${(candidate.bbox.y / Math.max(1, candidate.image_height)) * 100}%`,
+                      width: `${(candidate.bbox.w / Math.max(1, candidate.image_width)) * 100}%`,
+                      height: `${(candidate.bbox.h / Math.max(1, candidate.image_height)) * 100}%`
+                    }}
+                    onClick={() => setSelectedCandidates((current) =>
+                      current.includes(candidate.candidate_id)
+                        ? current.filter((id) => id !== candidate.candidate_id)
+                        : [...current, candidate.candidate_id]
+                    )}
+                    aria-label={`Select ${candidate.candidate_id}`}
+                  />
+                ))}
+              </div>
+              <div className="candidate-list">
+                {enrollment.candidates.map((candidate) => (
+                  <label key={candidate.candidate_id}>
+                    <input
+                      type="checkbox"
+                      checked={selectedCandidates.includes(candidate.candidate_id)}
+                      disabled={!candidate.usable}
+                      onChange={() => setSelectedCandidates((current) =>
+                        current.includes(candidate.candidate_id)
+                          ? current.filter((id) => id !== candidate.candidate_id)
+                          : [...current, candidate.candidate_id]
+                      )}
+                    />
+                    <span>{candidate.candidate_id} · {candidate.usable ? "usable" : candidate.reject_reasons.join(", ")}</span>
+                  </label>
+                ))}
+              </div>
+              <button onClick={commitCandidates} disabled={!selectedIdentity || selectedCandidates.length === 0 || pending}>Commit selected</button>
+            </div>
+          )}
+          {galleryMessage && <pre>{galleryMessage}</pre>}
+        </div>
+      </section>
+    </section>
+  );
+}
+
 export function App() {
+  const [activeView, setActiveView] = useState<"monitor" | "gallery" | "config">("monitor");
   const [health, setHealth] = useState<Record<string, unknown>>({});
   const [status, setStatus] = useState<PipelineStatus>({});
   const [streams, setStreams] = useState<StreamInfo[]>([]);
@@ -440,6 +726,11 @@ export function App() {
           <span>{configPath || "No active config"}</span>
         </div>
         <div className="status-cluster">
+          <nav className="top-nav" aria-label="Primary">
+            <button className={activeView === "monitor" ? "active" : ""} onClick={() => setActiveView("monitor")}>Monitor</button>
+            <button className={activeView === "gallery" ? "active" : ""} onClick={() => setActiveView("gallery")}>Gallery</button>
+            <button className={activeView === "config" ? "active" : ""} onClick={() => setActiveView("config")}>Config</button>
+          </nav>
           <span className="pill">Runner: {String((health as any).connection_state ?? "unknown")}</span>
           <span className="pill">Pipeline: {status.state ?? "unknown"}</span>
           <button onClick={() => runCommand(api.start)} title="Start"><Play size={16} />Start</button>
@@ -448,7 +739,7 @@ export function App() {
         </div>
       </header>
 
-      <section className="workspace">
+      {activeView === "monitor" && <section className="workspace">
         <StreamWorkspace
           streams={streams}
           selectedKey={selectedKey}
@@ -509,9 +800,11 @@ export function App() {
             <div className="routes-note"><Route size={14} />{selectedSnapshot?.routes.length ?? 0} learned routes</div>
           </section>
         </aside>
-      </section>
+      </section>}
 
-      <section className="config-editor">
+      {activeView === "gallery" && <GalleryView streams={streams} />}
+
+      {activeView === "config" && <section className="config-editor">
         <h2><FileCheck size={16} />Config</h2>
         <div className="config-toolbar">
           <label>
@@ -546,7 +839,7 @@ export function App() {
           <button onClick={() => runCommand(api.reload)}>Reload pipeline</button>
         </div>
         {configMessage && <pre>{configMessage}</pre>}
-      </section>
+      </section>}
     </main>
   );
 }

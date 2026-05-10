@@ -151,11 +151,63 @@ namespace veilsight {
         TelemetryHub& telemetry_;
     };
 
+    class RunnerGrpcServer::GalleryService final : public runner::v1::RunnerGalleryService::Service {
+    public:
+        explicit GalleryService(RunnerManager& manager) : manager_(manager) {}
+
+        grpc::Status AnalyzeEnrollmentImage(grpc::ServerContext*,
+                                            const runner::v1::AnalyzeEnrollmentImageRequest* request,
+                                            runner::v1::AnalyzeEnrollmentImageResponse* response) override {
+            const auto result = manager_.analyze_enrollment_image(request->image_bytes(), request->mime_type());
+            response->set_ok(result.ok);
+            response->set_message(result.message);
+            response->set_image_width(result.image_width);
+            response->set_image_height(result.image_height);
+            int index = 0;
+            for (const auto& candidate : result.candidates) {
+                auto* out = response->add_candidates();
+                out->set_candidate_id("face-" + std::to_string(index++));
+                auto* bbox = out->mutable_bbox();
+                bbox->set_x(candidate.face.bbox.x);
+                bbox->set_y(candidate.face.bbox.y);
+                bbox->set_w(candidate.face.bbox.w);
+                bbox->set_h(candidate.face.bbox.h);
+                for (int i = 0; i < candidate.face.landmark_count && i < 5; ++i) {
+                    const auto& point = candidate.face.landmarks[static_cast<size_t>(i)];
+                    auto* landmark = out->add_landmarks();
+                    landmark->set_x(point.x);
+                    landmark->set_y(point.y);
+                }
+                out->set_score(candidate.face.score);
+                out->set_image_width(result.image_width);
+                out->set_image_height(result.image_height);
+                out->set_usable(candidate.usable);
+                for (const auto& reason : candidate.reject_reasons) out->add_reject_reasons(reason);
+                for (const float value : candidate.embedding) out->add_embedding(value);
+            }
+            return grpc::Status::OK;
+        }
+
+        grpc::Status ReloadGallery(grpc::ServerContext*,
+                                   const runner::v1::ReloadGalleryRequest*,
+                                   runner::v1::ReloadGalleryResponse* response) override {
+            std::string error;
+            const bool ok = manager_.reload_gallery(&error);
+            response->set_accepted(ok);
+            response->set_message(ok ? "gallery reloaded" : error);
+            return grpc::Status::OK;
+        }
+
+    private:
+        RunnerManager& manager_;
+    };
+
     RunnerGrpcServer::RunnerGrpcServer(RunnerManager& manager, TelemetryHub& telemetry)
         : manager_(manager),
           telemetry_(telemetry),
           control_service_(std::make_unique<ControlService>(manager_)),
-          telemetry_service_(std::make_unique<TelemetryService>(telemetry_)) {}
+          telemetry_service_(std::make_unique<TelemetryService>(telemetry_)),
+          gallery_service_(std::make_unique<GalleryService>(manager_)) {}
 
     RunnerGrpcServer::~RunnerGrpcServer() {
         stop();
@@ -173,6 +225,7 @@ namespace veilsight {
         }
         builder.RegisterService(control_service_.get());
         builder.RegisterService(telemetry_service_.get());
+        builder.RegisterService(gallery_service_.get());
 
         server_ = builder.BuildAndStart();
         if (!server_) {

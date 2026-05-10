@@ -349,6 +349,31 @@ namespace {
         std::filesystem::remove(db_path);
     }
 
+    void test_mobilefacenet_face_only_box_can_match_gallery() {
+        auto cfg = mobilefacenet_cfg();
+        const auto f = frame(5);
+        const auto face = good_face();
+        const auto embedding = compute_embedding_for_test(cfg, f, face);
+
+        const auto db_path = temp_db_path("veilsight_gallery_face_only");
+        create_gallery_db(db_path, {{"alice", embedding}});
+        cfg.gallery_path = db_path.string();
+
+        auto recognizer = veilsight::create_recognizer(cfg);
+        veilsight::RecognitionTask task;
+        task.stream_id = "cam0";
+        task.frame_id = 5;
+        task.frame = f;
+        task.tracks = {track_with_face(-1, face)};
+        const auto result = recognizer->recognize(task);
+
+        check(result.tracks.size() == 1, "face-only self-match should preserve track count");
+        check(result.tracks[0].id == -1, "face-only self-match should preserve negative diagnostic id");
+        check(result.tracks[0].identity_key == "alice", "face-only self-match should assign gallery identity");
+        check(result.tracks[0].privacy_action == "allow", "face-only self-match should allow known identity");
+        std::filesystem::remove(db_path);
+    }
+
     void test_low_quality_attempt_does_not_cache_unknown() {
         auto cfg = mobilefacenet_cfg();
         const auto f = frame(3);
@@ -390,6 +415,7 @@ int main() {
     test_mobilefacenet_factory_loads_empty_gallery_and_caches_unknown();
     test_gallery_db_loads_multiple_embeddings_and_rejects_invalid_rows();
     test_mobilefacenet_gallery_self_match_allows();
+    test_mobilefacenet_face_only_box_can_match_gallery();
     test_low_quality_attempt_does_not_cache_unknown();
 
     if (g_failures != 0) {

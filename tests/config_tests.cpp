@@ -173,6 +173,61 @@ namespace {
         check(profiles.at("ui").fps == 12, "ui fps should be synchronized to outputs.fps");
     }
 
+    void test_webcam_config_parses_capture_fps() {
+        const std::string yaml =
+            "server:\n"
+            "  host: \"0.0.0.0\"\n"
+            "  port: 8080\n"
+            "streams:\n"
+            "  - id: \"cam0\"\n"
+            "    type: \"webcam\"\n"
+            "    webcam:\n"
+            "      device: \"/dev/video2\"\n"
+            "      width: 1280\n"
+            "      height: 720\n"
+            "      fps: 5\n"
+            "      mjpg: true\n"
+            "    outputs:\n"
+            "      fps: 5\n"
+            "      profiles:\n"
+            "        inference:\n"
+            "          width: 1088\n"
+            "          height: 608\n"
+            "        ui:\n"
+            "          width: 1280\n"
+            "          height: 720\n";
+
+        const std::string path = write_yaml_file("veilsight_webcam_cfg_ok", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        check(cfg.streams.size() == 1, "webcam config should load exactly one stream");
+        check(cfg.streams[0].webcam.device == "/dev/video2", "webcam device should parse");
+        check(cfg.streams[0].webcam.width == 1280, "webcam width should parse");
+        check(cfg.streams[0].webcam.height == 720, "webcam height should parse");
+        check(cfg.streams[0].webcam.fps == 5, "webcam capture fps should parse");
+
+        check(load_throws(
+                  "server:\n"
+                  "  host: \"0.0.0.0\"\n"
+                  "  port: 8080\n"
+                  "streams:\n"
+                  "  - id: \"cam0\"\n"
+                  "    type: \"webcam\"\n"
+                  "    webcam:\n"
+                  "      fps: 0\n"
+                  "    outputs:\n"
+                  "      fps: 5\n"
+                  "      profiles:\n"
+                  "        inference:\n"
+                  "          width: 1088\n"
+                  "          height: 608\n"
+                  "        ui:\n"
+                  "          width: 1280\n"
+                  "          height: 720\n"),
+              "webcam capture fps should reject zero");
+    }
+
     std::string base_streaming_yaml(const std::string& streaming) {
         return
             "server:\n"
@@ -567,8 +622,11 @@ namespace {
         const auto cfg = veilsight::load_config_yaml(path.string());
 
         check(cfg.streams.size() == 1, "full_reference should configure exactly one active stream");
-        check(cfg.streams[0].id == "file0", "full_reference active stream should be file0");
-        check(cfg.streams[0].type == "file", "full_reference active stream should be a file stream");
+        check(cfg.streams[0].type == "file" || cfg.streams[0].type == "webcam",
+              "full_reference active stream should be a supported local source");
+        if (cfg.streams[0].type == "webcam") {
+            check(cfg.streams[0].webcam.fps >= 1, "full_reference webcam fps should parse");
+        }
         check(cfg.modules.person_detector.type == "yolox", "modules.person_detector should parse into detector config");
         check(cfg.modules.person_detector.workers == 2, "person_detector.model_instances should parse");
         check(cfg.modules.face_detector.type == "scrfd",
@@ -780,6 +838,7 @@ int main() {
     test_config_rejects_legacy_output();
     test_config_requires_global_outputs_fps();
     test_global_outputs_fps_overrides_profile_fps();
+    test_webcam_config_parses_capture_fps();
     test_streaming_webrtc_defaults_and_parsing();
     test_streaming_webrtc_default_cors_allows_vite_loopback();
     test_streaming_validation_rejects_invalid_values();

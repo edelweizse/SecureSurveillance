@@ -27,7 +27,7 @@ endif()
 
 # Dependencies
 # OpenCV
-find_package(OpenCV QUIET)
+find_package(OpenCV REQUIRED COMPONENTS core imgproc imgcodecs videoio)
 target_link_libraries(veilsight_core PUBLIC ${OpenCV_LIBS})
 
 # GStreamer

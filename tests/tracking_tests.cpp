@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <opencv2/core.hpp>
+#include <opencv2/videoio.hpp>
 
 namespace {
     int g_failures = 0;
@@ -60,6 +61,36 @@ namespace {
             check(b.x + b.w <= 320.1f && b.y + b.h <= 240.1f, "YOLOX boxes should be clipped to frame bounds");
             check(b.id == -1, "YOLOX detections should not assign track IDs");
         }
+    }
+
+    void test_yolox_detects_people_in_store_fixture() {
+        veilsight::PersonDetectorModuleConfig cfg;
+        cfg.type = "yolox";
+        cfg.yolox.variant = "nano";
+        cfg.yolox.input_w = 1088;
+        cfg.yolox.input_h = 608;
+        cfg.yolox.score_threshold = 0.25f;
+        cfg.yolox.decoded_output = false;
+
+        cv::VideoCapture cap("assets/store.mp4");
+        if (!cap.isOpened()) {
+            cap.open("../assets/store.mp4");
+        }
+        if (!cap.isOpened()) {
+            cap.open("../../assets/store.mp4");
+        }
+        check(cap.isOpened(), "store fixture video should open");
+        if (!cap.isOpened()) return;
+
+        cap.set(cv::CAP_PROP_POS_MSEC, 2000.0);
+        cv::Mat frame;
+        cap.read(frame);
+        check(!frame.empty(), "store fixture frame should decode");
+        if (frame.empty()) return;
+
+        auto detector = veilsight::create_person_detector(cfg);
+        const auto boxes = detector->detect(frame);
+        check(!boxes.empty(), "YOLOX should detect people in store fixture frame");
     }
 
     void test_association_returns_deterministic_matches() {
@@ -279,6 +310,7 @@ namespace {
 int main() {
     test_detector_factory_creates_yolox_factory();
     test_yolox_ncnn_detector_loads_and_runs();
+    test_yolox_detects_people_in_store_fixture();
     test_association_returns_deterministic_matches();
     test_grid_disabled_equals_baseline_association();
     test_grid_soft_cost_changes_ambiguous_association();

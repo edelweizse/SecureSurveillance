@@ -273,6 +273,10 @@ namespace veilsight {
                             for (const auto& box : boxes) {
                                 result.boxes.push_back(map_box(task.input.image_to_frame, box));
                             }
+                            person_detections_total_.fetch_add(result.boxes.size(), std::memory_order_relaxed);
+                            if (task.frame_ctx) {
+                                task.frame_ctx->person_detection_count = result.boxes.size();
+                            }
                         } catch (const std::exception& e) {
                             ok = false;
                             thread_local bool logged = false;
@@ -322,6 +326,7 @@ namespace veilsight {
                                 for (const auto& face : faces) {
                                     result.faces.push_back(map_face(task.input.image_to_frame, face));
                                 }
+                                face_detections_total_.fetch_add(result.faces.size(), std::memory_order_relaxed);
                             } catch (const std::exception& e) {
                                 ok = false;
                                 thread_local bool logged = false;
@@ -482,6 +487,14 @@ namespace veilsight {
         return true;
     }
 
+    bool PipelineRuntime::reload_recognizer_gallery(std::string* error) {
+        if (!recognizer_stage_ || !recognizer_stage_->factory) {
+            if (error) *error = "recognizer stage is not running";
+            return false;
+        }
+        return recognizer_stage_->factory->reload_gallery(error);
+    }
+
     void PipelineRuntime::stop() {
         if (!running_ && !person_detector_stage_ && !face_detector_stage_ && !recognizer_stage_ && !identity_stage_ &&
             pipes_.empty()) {
@@ -565,6 +578,7 @@ namespace veilsight {
 
             auto ctx = std::make_shared<FrameCtx>();
             ctx->stream_id = cfg.id;
+            ctx->source_type = cfg.type;
             ctx->frame_id = dp.frame_id;
             ctx->pts_ns = dp.pts_ns;
             ctx->created_steady_ns = ingest_t0_ns;
@@ -665,6 +679,7 @@ namespace veilsight {
 
     void PipelineRuntime::commit_frame_(const FramePtr& frame) {
         if (!frame) return;
+        committed_tracks_total_.fetch_add(frame->tracked_boxes.size(), std::memory_order_relaxed);
         publish_frame_analytics_(*frame, frame->tracked_boxes);
         frame->inf.release();
         AnonymizeTask task;
@@ -727,6 +742,8 @@ namespace veilsight {
                 "\"pts_ns\":" + std::to_string(ctx->pts_ns) + ","
                 "\"w\":" + std::to_string(ctx->ui.cols) + ","
                 "\"h\":" + std::to_string(ctx->ui.rows) + ","
+                "\"person_detections\":" + std::to_string(ctx->person_detection_count) + ","
+                "\"face_detections\":" + std::to_string(ctx->face_detection_count) + ","
                 "\"tracks\":" + std::to_string(ctx->tracked_boxes.size()) +
                 "}";
             stream_publisher_.publish_metadata(ui_key, std::move(ui_meta));
@@ -906,6 +923,9 @@ namespace veilsight {
             const StageSnapshot ano = pick_stage(RuntimeStage::Anonymizer);
             const StageSnapshot enc = pick_stage(RuntimeStage::Encoder);
             const StageSnapshot e2e = pick_stage(RuntimeStage::EndToEnd);
+            const uint64_t person_detections = person_detections_total_.load(std::memory_order_relaxed);
+            const uint64_t face_detections = face_detections_total_.load(std::memory_order_relaxed);
+            const uint64_t committed_tracks = committed_tracks_total_.load(std::memory_order_relaxed);
 
             std::cerr << "[Metrics] "
                       << "person_fps=" << person.fps << " person_p95_ms=" << person.p95_ms << " "
@@ -915,7 +935,10 @@ namespace veilsight {
                       << "identity_fps=" << identity.fps << " identity_p95_ms=" << identity.p95_ms << " "
                       << "anon_fps=" << ano.fps << " anon_p95_ms=" << ano.p95_ms << " "
                       << "enc_fps=" << enc.fps << " enc_p95_ms=" << enc.p95_ms << " "
-                      << "e2e_p95_ms=" << e2e.p95_ms
+                      << "e2e_p95_ms=" << e2e.p95_ms << " "
+                      << "person_detections_total=" << person_detections << " "
+                      << "face_detections_total=" << face_detections << " "
+                      << "committed_tracks_total=" << committed_tracks
                       << "\n";
 
             for (const auto& [name, q] : queues) {

@@ -17,6 +17,11 @@ service RunnerTelemetryService {
   rpc GetMetricsSnapshot(GetMetricsSnapshotRequest) returns (MetricsSnapshot);
 }
 
+service RunnerGalleryService {
+  rpc AnalyzeEnrollmentImage(AnalyzeEnrollmentImageRequest) returns (AnalyzeEnrollmentImageResponse);
+  rpc ReloadGallery(ReloadGalleryRequest) returns (ReloadGalleryResponse);
+}
+
 message HealthRequest {
   string controller_id = 1;
 }
@@ -96,6 +101,38 @@ message RectF {
   float y = 2;
   float w = 3;
   float h = 4;
+}
+
+message AnalyzeEnrollmentImageRequest {
+  bytes image_bytes = 1;
+  string mime_type = 2;
+}
+
+message EnrollmentCandidate {
+  string candidate_id = 1;
+  RectF bbox = 2;
+  repeated PointF landmarks = 3;
+  float score = 4;
+  int32 image_width = 5;
+  int32 image_height = 6;
+  bool usable = 7;
+  repeated string reject_reasons = 8;
+  repeated float embedding = 9;
+}
+
+message AnalyzeEnrollmentImageResponse {
+  bool ok = 1;
+  string message = 2;
+  int32 image_width = 3;
+  int32 image_height = 4;
+  repeated EnrollmentCandidate candidates = 5;
+}
+
+message ReloadGalleryRequest {}
+
+message ReloadGalleryResponse {
+  bool accepted = 1;
+  string message = 2;
 }
 
 message FaceObservation {

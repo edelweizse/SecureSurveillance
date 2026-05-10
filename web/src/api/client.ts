@@ -48,6 +48,47 @@ export type AnalyticsRulePayload = {
   settings?: Record<string, unknown>;
 };
 
+export type GalleryIdentity = {
+  identity_key: string;
+  display_name?: string | null;
+  active: boolean;
+  embedding_count: number;
+  created_at_ms?: number | null;
+  updated_at_ms?: number | null;
+};
+
+export type GalleryEmbedding = {
+  id: number;
+  identity_key: string;
+  model: string;
+  dim: number;
+  active: boolean;
+  source_type?: string | null;
+  source_ref?: string | null;
+  quality?: Record<string, unknown> | null;
+  face_bbox?: Record<string, unknown> | null;
+  created_at_ms?: number | null;
+};
+
+export type EnrollmentCandidate = {
+  candidate_id: string;
+  image_id: string;
+  bbox: { x: number; y: number; w: number; h: number };
+  landmarks: Array<{ x: number; y: number }>;
+  score: number;
+  image_width: number;
+  image_height: number;
+  usable: boolean;
+  reject_reasons: string[];
+};
+
+export type EnrollmentCandidateResponse = {
+  enrollment_id: string;
+  expires_at_ms: number;
+  image_id: string;
+  candidates: EnrollmentCandidate[];
+};
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
   if (!response.ok) {
@@ -104,4 +145,42 @@ export const api = {
   start: () => request<Record<string, unknown>>("/api/pipeline/start", { method: "POST" }),
   stop: () => request<Record<string, unknown>>("/api/pipeline/stop", { method: "POST" }),
   reload: () => request<Record<string, unknown>>("/api/pipeline/reload", { method: "POST" })
+  ,
+  galleryIdentities: () => request<GalleryIdentity[]>("/api/gallery/identities"),
+  createGalleryIdentity: (payload: { identity_key?: string; display_name: string; active?: boolean }) =>
+    request<GalleryIdentity>("/api/gallery/identities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }),
+  updateGalleryIdentity: (identity_key: string, payload: { display_name?: string; active?: boolean }) =>
+    request<GalleryIdentity>(`/api/gallery/identities/${encodeURIComponent(identity_key)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    }),
+  deleteGalleryIdentity: (identity_key: string) =>
+    request<Record<string, unknown>>(`/api/gallery/identities/${encodeURIComponent(identity_key)}`, { method: "DELETE" }),
+  galleryEmbeddings: (identity_key: string) =>
+    request<GalleryEmbedding[]>(`/api/gallery/identities/${encodeURIComponent(identity_key)}/embeddings`),
+  deleteGalleryEmbedding: (embedding_id: number) =>
+    request<GalleryEmbedding>(`/api/gallery/embeddings/${embedding_id}`, { method: "DELETE" }),
+  enrollmentCandidates: (file: Blob, filename = "capture.jpg") => {
+    const form = new FormData();
+    form.append("file", file, filename);
+    return request<EnrollmentCandidateResponse>("/api/gallery/enrollment-candidates", { method: "POST", body: form });
+  },
+  enrollmentCandidatesFromStream: (stream_id: string, profile = "ui") =>
+    request<EnrollmentCandidateResponse>("/api/gallery/enrollment-candidates/from-stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stream_id, profile })
+    }),
+  commitGalleryEmbeddings: (identity_key: string, enrollment_id: string, candidate_ids: string[]) =>
+    request<GalleryEmbedding[]>(`/api/gallery/identities/${encodeURIComponent(identity_key)}/embeddings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enrollment_id, candidate_ids })
+    }),
+  refreshGallery: () => request<Record<string, unknown>>("/api/gallery/refresh", { method: "POST" })
 };

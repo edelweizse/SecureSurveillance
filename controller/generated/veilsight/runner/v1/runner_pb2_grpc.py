@@ -468,3 +468,118 @@ class RunnerTelemetryService(object):
             timeout,
             metadata,
             _registered_method=True)
+
+
+class RunnerGalleryServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.AnalyzeEnrollmentImage = channel.unary_unary(
+                '/veilsight.runner.v1.RunnerGalleryService/AnalyzeEnrollmentImage',
+                request_serializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.AnalyzeEnrollmentImageRequest.SerializeToString,
+                response_deserializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.AnalyzeEnrollmentImageResponse.FromString,
+                _registered_method=True)
+        self.ReloadGallery = channel.unary_unary(
+                '/veilsight.runner.v1.RunnerGalleryService/ReloadGallery',
+                request_serializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.ReloadGalleryRequest.SerializeToString,
+                response_deserializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.ReloadGalleryResponse.FromString,
+                _registered_method=True)
+
+
+class RunnerGalleryServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def AnalyzeEnrollmentImage(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReloadGallery(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_RunnerGalleryServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'AnalyzeEnrollmentImage': grpc.unary_unary_rpc_method_handler(
+                    servicer.AnalyzeEnrollmentImage,
+                    request_deserializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.AnalyzeEnrollmentImageRequest.FromString,
+                    response_serializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.AnalyzeEnrollmentImageResponse.SerializeToString,
+            ),
+            'ReloadGallery': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReloadGallery,
+                    request_deserializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.ReloadGalleryRequest.FromString,
+                    response_serializer=veilsight_dot_runner_dot_v1_dot_runner__pb2.ReloadGalleryResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'veilsight.runner.v1.RunnerGalleryService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('veilsight.runner.v1.RunnerGalleryService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class RunnerGalleryService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def AnalyzeEnrollmentImage(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/veilsight.runner.v1.RunnerGalleryService/AnalyzeEnrollmentImage',
+            veilsight_dot_runner_dot_v1_dot_runner__pb2.AnalyzeEnrollmentImageRequest.SerializeToString,
+            veilsight_dot_runner_dot_v1_dot_runner__pb2.AnalyzeEnrollmentImageResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReloadGallery(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/veilsight.runner.v1.RunnerGalleryService/ReloadGallery',
+            veilsight_dot_runner_dot_v1_dot_runner__pb2.ReloadGalleryRequest.SerializeToString,
+            veilsight_dot_runner_dot_v1_dot_runner__pb2.ReloadGalleryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

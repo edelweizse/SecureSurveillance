@@ -73,15 +73,32 @@ namespace veilsight {
             return face.score + containment * 2.0f + iou_of(face.bbox, upper);
         }
 
+        Box face_only_box(const FaceObservation& face, int id) {
+            Box box;
+            box.x = face.bbox.x;
+            box.y = face.bbox.y;
+            box.w = face.bbox.w;
+            box.h = face.bbox.h;
+            box.id = id;
+            box.score = face.score;
+            box.privacy_action = "anonymize";
+            box.recognition_state = "face_only";
+            box.face = face;
+            return box;
+        }
+
         void assign_full_frame_faces(std::vector<Box>& tracks,
                                      std::vector<FaceObservation> faces,
                                      int64_t frame_id,
+                                     bool emit_unassigned_faces,
                                      const FaceDetectorModuleConfig& cfg) {
             std::sort(faces.begin(), faces.end(), [](const FaceObservation& a, const FaceObservation& b) {
                 return a.score > b.score;
             });
 
             std::vector<int> assigned_per_track(tracks.size(), 0);
+            const size_t person_track_count = tracks.size();
+            int face_only_id = -1;
             const int max_per_track = 1;
             const float min_face_score = cfg.type == "yunet" ? cfg.yunet.score_threshold : cfg.scrfd.score_threshold;
 
@@ -91,8 +108,8 @@ namespace veilsight {
                 face.fresh = true;
 
                 float best_score = -std::numeric_limits<float>::infinity();
-                size_t best_track = tracks.size();
-                for (size_t i = 0; i < tracks.size(); ++i) {
+                size_t best_track = person_track_count;
+                for (size_t i = 0; i < person_track_count; ++i) {
                     if (assigned_per_track[i] >= max_per_track) continue;
                     if (!plausible_face_for_track(face, tracks[i], min_face_score)) continue;
 
@@ -103,7 +120,11 @@ namespace veilsight {
                     }
                 }
 
-                if (best_track >= tracks.size()) continue;
+                if (best_track >= person_track_count) {
+                    if (!emit_unassigned_faces) continue;
+                    tracks.push_back(face_only_box(face, face_only_id--));
+                    continue;
+                }
                 tracks[best_track].face = face;
                 ++assigned_per_track[best_track];
             }
@@ -165,7 +186,7 @@ namespace veilsight {
         std::lock_guard<std::mutex> lock(state_->mutex);
         for (const auto& result : results) {
             if (result.kind != FaceProbeKind::FullFrame) continue;
-            assign_full_frame_faces(tracks, result.faces, frame.frame_id, cfg_);
+            assign_full_frame_faces(tracks, result.faces, frame.frame_id, frame.source_type == "webcam", cfg_);
         }
     }
 

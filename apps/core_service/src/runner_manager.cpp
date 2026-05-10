@@ -6,6 +6,8 @@
 
 #include <common/replicate.hpp>
 
+#include <opencv2/imgcodecs.hpp>
+
 namespace veilsight {
     namespace {
         uint64_t now_epoch_ms() {
@@ -84,6 +86,48 @@ namespace veilsight {
                               : reload_error + "; rollback failed: " + rollback_error;
         }
         return false;
+    }
+
+    bool RunnerManager::reload_gallery(std::string* error) {
+        std::lock_guard lk(mutex_);
+        if (!runtime_ || !runtime_->is_running()) {
+            if (error) *error = "pipeline is not running";
+            return false;
+        }
+        return runtime_->reload_recognizer_gallery(error);
+    }
+
+    EnrollmentAnalysisResult RunnerManager::analyze_enrollment_image(
+        const std::string& image_bytes,
+        const std::string& mime_type) const {
+        EnrollmentAnalysisResult out;
+        if (mime_type != "image/jpeg" && mime_type != "image/png" && mime_type != "image/webp") {
+            out.ok = false;
+            out.message = "unsupported image MIME type";
+            return out;
+        }
+        std::vector<unsigned char> bytes(image_bytes.begin(), image_bytes.end());
+        cv::Mat bgr = cv::imdecode(bytes, cv::IMREAD_COLOR);
+        if (bgr.empty()) {
+            out.ok = false;
+            out.message = "failed to decode image";
+            return out;
+        }
+
+        FaceDetectorModuleConfig face_cfg;
+        RecognizerModuleConfig recognizer_cfg;
+        {
+            std::lock_guard lk(mutex_);
+            face_cfg = config_.modules.face_detector;
+            recognizer_cfg = config_.modules.recognizer;
+        }
+        if (face_cfg.type == "none") {
+            face_cfg.type = "scrfd";
+        }
+        if (recognizer_cfg.type != "mobilefacenet") {
+            recognizer_cfg.type = "mobilefacenet";
+        }
+        return analyze_mobilefacenet_enrollment_image(face_cfg, recognizer_cfg, bgr);
     }
 
     bool RunnerManager::validate_config_yaml(const std::string& config_yaml,
