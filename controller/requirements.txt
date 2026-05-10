@@ -2,5 +2,6 @@ fastapi
 grpcio
 grpcio-tools
 protobuf
+python-multipart
 PyYAML
 uvicorn[standard]

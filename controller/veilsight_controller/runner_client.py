@@ -40,6 +40,7 @@ class RunnerClient:
         self._channel: grpc.aio.Channel | None = None
         self._control: runner_pb2_grpc.PipelineControlServiceStub | None = None
         self._telemetry: runner_pb2_grpc.RunnerTelemetryServiceStub | None = None
+        self._gallery: runner_pb2_grpc.RunnerGalleryServiceStub | None = None
         self._telemetry_task: asyncio.Task[None] | None = None
         self._callbacks: list[TelemetryCallback] = []
         self._healthy = False
@@ -121,6 +122,22 @@ class RunnerClient:
         )
         return message_to_dict(response)
 
+    async def analyze_enrollment_image(self, image_bytes: bytes, mime_type: str) -> dict[str, Any]:
+        gallery = await self._gallery_stub()
+        response = await gallery.AnalyzeEnrollmentImage(
+            runner_pb2.AnalyzeEnrollmentImageRequest(image_bytes=image_bytes, mime_type=mime_type),
+            timeout=max(self.timeout_s, 15.0),
+        )
+        return message_to_dict(response)
+
+    async def reload_gallery(self) -> dict[str, Any]:
+        gallery = await self._gallery_stub()
+        response = await gallery.ReloadGallery(
+            runner_pb2.ReloadGalleryRequest(),
+            timeout=max(self.timeout_s, 10.0),
+        )
+        return message_to_dict(response)
+
     async def _connect(self) -> None:
         async with self._lock:
             if self._channel is not None:
@@ -128,6 +145,7 @@ class RunnerClient:
             self._channel = grpc.aio.insecure_channel(grpc_target(self.address))
             self._control = runner_pb2_grpc.PipelineControlServiceStub(self._channel)
             self._telemetry = runner_pb2_grpc.RunnerTelemetryServiceStub(self._channel)
+            self._gallery = runner_pb2_grpc.RunnerGalleryServiceStub(self._channel)
 
     async def _stubs(
         self,
@@ -136,6 +154,12 @@ class RunnerClient:
         if self._control is None or self._telemetry is None:
             raise RuntimeError("runner client is not connected")
         return self._control, self._telemetry
+
+    async def _gallery_stub(self) -> runner_pb2_grpc.RunnerGalleryServiceStub:
+        await self._connect()
+        if self._gallery is None:
+            raise RuntimeError("runner gallery client is not connected")
+        return self._gallery
 
     async def _watch_telemetry(self) -> None:
         while True:

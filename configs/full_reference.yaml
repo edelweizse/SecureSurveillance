@@ -228,10 +228,10 @@ modules:
      embedding_dim: 128
      ncnn_threads: 1
      cache_ttl_frames: 900
-     min_face_score: 0.70
+     min_face_score: 0.30
      min_face_size_px: 0
      min_inter_eye_px: 0
-     max_roll_deg: 100.0
+     max_roll_deg: 180.0
      max_yaw_offset_ratio: 0.99
 
   identity:
@@ -252,59 +252,59 @@ metrics:
 
 streams:
   # stream.output is deprecated and must not be used. Use outputs.profiles.
-  - id: "file0"
-    type: "file"
-    file:
-      path: "../../../assets/output.mp4"
-      fps: 4
-      loop: true
-    outputs:
-      fps: 4
-      profiles:
-        inference:
-          width: 1088
-          height: 608
-          keep_aspect: true
-          interp: "linear"
-          format: "BGR"
-        ui:
-          width: 1280
-          height: 720
-          keep_aspect: true
-          interp: "linear"
-          jpeg_quality: 75
-    replicate:
-      count: 2
+#  - id: "file0"
+#    type: "file"
+#    file:
+#      path: "../../../assets/output.mp4"
+#      fps: 4
+#      loop: true
+#    outputs:
+#      fps: 4
+#      profiles:
+#        inference:
+#          width: 1088
+#          height: 608
+#          keep_aspect: true
+#          interp: "linear"
+#          format: "BGR"
+#        ui:
+#          width: 1280
+#          height: 720
+#          keep_aspect: true
+#          interp: "linear"
+#          jpeg_quality: 75
+#    replicate:
+#      count: 2
       # ids:
       #   - "file0_a"
       #   - "file0_b"
 
   # Webcam stream alternative.
-  # - id: "cam0"
-  #   type: "webcam"
-  #   webcam:
-  #     device: "/dev/video0"
-  #     width: 1280
-  #     height: 720
-  #     fps: 15
-  #     mjpg: true
-  #   outputs:
-  #     fps: 15
-  #     profiles:
-  #       inference:
-  #         width: 640
-  #         height: 640
-  #         keep_aspect: true
-  #         interp: "linear"
-  #         format: "BGR"
-  #       ui:
-  #         width: 1280
-  #         height: 720
-  #         keep_aspect: true
-  #         interp: "linear"
-  #         jpeg_quality: 75
-  #   replicate:
-  #     count: 1
+   - id: "cam0"
+     type: "webcam"
+     webcam:
+       device: "/dev/video0"
+       width: 1280
+       height: 720
+       fps: 30
+       mjpg: true
+     outputs:
+       fps: 5
+       profiles:
+         inference:
+           width: 1088
+           height: 608
+           keep_aspect: true
+           interp: "linear"
+           format: "BGR"
+         ui:
+           width: 1280
+           height: 720
+           keep_aspect: true
+           interp: "linear"
+           jpeg_quality: 75
+     replicate:
+       count: 1
 
   # RTSP stream alternative.
   # - id: "rtsp0"

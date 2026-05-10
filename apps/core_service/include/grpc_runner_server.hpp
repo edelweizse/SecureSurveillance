@@ -22,11 +22,13 @@ namespace veilsight {
     private:
         class ControlService;
         class TelemetryService;
+        class GalleryService;
 
         RunnerManager& manager_;
         TelemetryHub& telemetry_;
         std::unique_ptr<ControlService> control_service_;
         std::unique_ptr<TelemetryService> telemetry_service_;
+        std::unique_ptr<GalleryService> gallery_service_;
         std::unique_ptr<grpc::Server> server_;
     };
 }

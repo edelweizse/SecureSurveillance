@@ -183,6 +183,11 @@ namespace veilsight {
 
     void StreamCoordinator::queue_recognition_(PendingFaceFrame& pending, const Callbacks& callbacks) {
         if (!pending.frame || pending.recognition_queued) return;
+        size_t face_count = 0;
+        for (const auto& result : pending.results) {
+            face_count += result.faces.size();
+        }
+        pending.frame->face_detection_count = face_count;
         face_result_applier_.apply(*pending.frame, pending.tracks, pending.results);
         pending.frame->tracked_boxes = pending.tracks;
 

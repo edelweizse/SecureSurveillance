@@ -67,6 +67,7 @@ namespace veilsight {
         bool start() override;
         void stop() override;
         bool is_running() const override;
+        bool reload_recognizer_gallery(std::string* error);
 
         ~PipelineRuntime();
 
@@ -134,6 +135,9 @@ namespace veilsight {
         Options opt_;
 
         std::atomic<bool> running_{false};
+        std::atomic<uint64_t> person_detections_total_{0};
+        std::atomic<uint64_t> face_detections_total_{0};
+        std::atomic<uint64_t> committed_tracks_total_{0};
         NamedQueue<AnonymizeTask> anonymizer_in_;
 
         std::vector<std::unique_ptr<StreamPipe>> pipes_;

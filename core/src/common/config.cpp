@@ -66,7 +66,7 @@ namespace veilsight {
         c.device = get_str(wc, "device", "/dev/video0");
         c.width = get_int(wc, "width", 1280);
         c.height = get_int(wc, "height", 720);
-        //c.fps = get_int(wc, "fps", 30);
+        c.fps = get_int(wc, "fps", 30);
         c.mjpg = get_bool(wc, "mjpg", get_bool(wc, "mjpeg", true));
         return c;
     }
@@ -539,6 +539,17 @@ namespace veilsight {
 
             if (ic.type == "rtsp" && ic.rtsp.url.empty()) {
                 throw std::runtime_error ("[Config] RTSP stream " + ic.id + " has empty URL!");
+            }
+            if (ic.type == "webcam") {
+                if (ic.webcam.device.empty()) {
+                    throw std::runtime_error("[Config] webcam stream " + ic.id + " has empty device!");
+                }
+                if (ic.webcam.width < 1 || ic.webcam.height < 1) {
+                    throw std::runtime_error("[Config] webcam stream " + ic.id + " width/height must be >= 1");
+                }
+                if (ic.webcam.fps < 1) {
+                    throw std::runtime_error("[Config] webcam stream " + ic.id + " fps must be >= 1");
+                }
             }
 
             cfg.streams.push_back(std::move(ic));

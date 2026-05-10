@@ -52,6 +52,7 @@ namespace veilsight {
 
     struct FrameCtx {
         std::string stream_id;
+        std::string source_type;
         int64_t frame_id = 0;
         int64_t pts_ns = 0;
         uint64_t created_steady_ns = 0;
@@ -71,6 +72,8 @@ namespace veilsight {
         cv::Mat ui;  // will be mutated by anonymizer and output to user
         cv::Mat inf; // will be released after inference
         std::vector<Box> tracked_boxes;
+        size_t person_detection_count = 0;
+        size_t face_detection_count = 0;
     };
 
     using FramePtr = std::shared_ptr<FrameCtx>;

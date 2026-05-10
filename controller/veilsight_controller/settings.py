@@ -61,6 +61,14 @@ class AnalyticsSettings:
         self.retention = AnalyticsRetentionSettings()
 
 
+class GallerySettings:
+    def __init__(self) -> None:
+        self.db_path = Path(os.getenv("VEILSIGHT_GALLERY_DB_PATH", "data/mobilefacenet_gallery.sqlite3")).resolve()
+        self.auto_refresh = _env_bool("VEILSIGHT_GALLERY_AUTO_REFRESH", True)
+        self.enrollment_ttl_s = _env_int("VEILSIGHT_GALLERY_ENROLLMENT_TTL_S", 600)
+        self.max_image_bytes = _env_int("VEILSIGHT_GALLERY_MAX_IMAGE_BYTES", 8 * 1024 * 1024)
+
+
 class ControllerSettings:
     controller_id: str = "controller"
 
@@ -71,6 +79,7 @@ class ControllerSettings:
         self.runner_public_base_url = os.getenv("VEILSIGHT_RUNNER_PUBLIC_BASE_URL", "http://localhost:8080")
         self.web_dist = Path(os.getenv("VEILSIGHT_WEB_DIST", "web/dist")).resolve()
         self.analytics = AnalyticsSettings()
+        self.gallery = GallerySettings()
 
 
 settings = ControllerSettings()

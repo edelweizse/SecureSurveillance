@@ -3,6 +3,8 @@
 #include <stdexcept>
 #include <filesystem>
 #include <gst/gstutils.h>
+#include <gst/gst.h>
+#include <mutex>
 
 namespace veilsight {
 
@@ -23,6 +25,20 @@ namespace veilsight {
         std::string res(uri);
         g_free(uri);
         return res;
+    }
+
+    static void ensure_gst_initialized() {
+        static std::once_flag gst_init_flag;
+        std::call_once(gst_init_flag, [] { gst_init(nullptr, nullptr); });
+    }
+
+    static void require_gst_element(const std::string& name, const std::string& context) {
+        ensure_gst_initialized();
+        GstElementFactory* factory = gst_element_factory_find(name.c_str());
+        if (!factory) {
+            throw std::runtime_error("missing GStreamer element '" + name + "' required for " + context);
+        }
+        gst_object_unref(factory);
     }
 
     static OutputConfig need_profile(const IngestConfig& cfg, const std::string& name) {
@@ -114,11 +130,11 @@ namespace veilsight {
         if (w.mjpg) {
             ss << "v4l2src device=" << w.device << " ! "
                << "image/jpeg,width=" << w.width << ",height=" << w.height
-               << ",framerate=30/1 ! jpegdec ";
+               << ",framerate=" << w.fps << "/1 ! jpegdec ";
         } else {
             ss << "v4l2src device=" << w.device << " ! "
                << "video/x-raw,width=" << w.width << ",height=" << w.height
-               << ",framerate=30/1 ";
+               << ",framerate=" << w.fps << "/1 ";
         }
         ss << common_split_tail(sink_inf, sink_ui, inf, ui, true);
         return ss.str();
@@ -140,7 +156,11 @@ namespace veilsight {
         std::string pipe;
 
         if (cfg.type == "file") pipe = file_dual_pipeline(cfg, sink_inf, sink_ui, inf, ui);
-        else if (cfg.type == "webcam") pipe = webcam_dual_pipeline(cfg, sink_inf, sink_ui, inf, ui);
+        else if (cfg.type == "webcam") {
+            require_gst_element("v4l2src", "webcam stream " + cfg.id);
+            if (cfg.webcam.mjpg) require_gst_element("jpegdec", "MJPEG webcam stream " + cfg.id);
+            pipe = webcam_dual_pipeline(cfg, sink_inf, sink_ui, inf, ui);
+        }
         else if (cfg.type == "rtsp") pipe = rtsp_dual_pipeline(cfg, sink_inf, sink_ui, inf, ui);
         else throw std::invalid_argument("[Config] Unknown source type: " + cfg.type + ".\n");
 

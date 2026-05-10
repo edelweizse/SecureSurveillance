@@ -7,6 +7,7 @@
 
 #include <common/config.hpp>
 #include <pipeline/runtime.hpp>
+#include <recognizer/recognizer.hpp>
 #include <streaming/composite_stream_publisher.hpp>
 #include <streaming/mjpeg_publisher.hpp>
 #include <streaming/runner_http_server.hpp>
@@ -23,6 +24,8 @@ namespace veilsight {
         bool start(std::string* error);
         void stop();
         bool reload_config_yaml(const std::string& config_yaml, std::string* error);
+        bool reload_gallery(std::string* error);
+        EnrollmentAnalysisResult analyze_enrollment_image(const std::string& image_bytes, const std::string& mime_type) const;
         bool validate_config_yaml(const std::string& config_yaml, std::vector<std::string>* errors) const;
 
         runner::v1::PipelineStatus status(std::string message = {}) const;

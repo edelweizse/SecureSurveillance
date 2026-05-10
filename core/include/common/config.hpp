@@ -174,11 +174,11 @@ namespace veilsight {
     };
 
     struct WebcamConfig {
-        std::string device;
-        int width;
-        int height;
-        //int fps;
-        bool mjpg;
+        std::string device = "/dev/video0";
+        int width = 1280;
+        int height = 720;
+        int fps = 30;
+        bool mjpg = true;
     };
 
     struct FileConfig {

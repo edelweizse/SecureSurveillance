@@ -21,6 +21,9 @@ global.WebSocket = MockSocket as any;
 
 class MockMediaStream {
   constructor(public tracks: unknown[] = []) {}
+  getTracks() {
+    return this.tracks as MediaStreamTrack[];
+  }
 }
 
 class MockPeerConnection {
@@ -93,6 +96,26 @@ function snapshot(stream_id: string, frame_id = 5, rules: any[] = []) {
 
 function mockFetch(streams = [stream("cam0")], metrics: Record<string, unknown> = {}) {
   let config = { path: "/tmp/config.yaml", yaml_text: "streams: []" };
+  let identities = [{ identity_key: "alice", display_name: "Alice", active: true, embedding_count: 1 }];
+  let embeddings = [{ id: 7, identity_key: "alice", model: "mobilefacenet", dim: 128, active: true, source_type: "upload" }];
+  const candidateResponse = {
+    enrollment_id: "enroll-1",
+    expires_at_ms: 999999,
+    image_id: "source",
+    candidates: [
+      {
+        candidate_id: "face-0",
+        image_id: "source",
+        bbox: { x: 10, y: 10, w: 20, h: 20 },
+        landmarks: [],
+        score: 0.95,
+        image_width: 100,
+        image_height: 100,
+        usable: true,
+        reject_reasons: []
+      }
+    ]
+  };
   const files = [
     { path: "/tmp/config.yaml", name: "config.yaml" },
     { path: "/tmp/alternate.yaml", name: "alternate.yaml" }
@@ -114,6 +137,33 @@ function mockFetch(streams = [stream("cam0")], metrics: Record<string, unknown> 
     if (url === "/api/pipeline/status") return Response.json({ state: "stopped" });
     if (url === "/api/health") return Response.json({ ok: true, connection_state: "connected", runner: { ok: true } });
     if (url === "/api/metrics") return Response.json(metrics);
+    if (url === "/api/gallery/identities") {
+      if (init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        const created = { identity_key: "bob", display_name: body.display_name, active: true, embedding_count: 0 };
+        identities = [...identities, created];
+        return Response.json(created);
+      }
+      return Response.json(identities);
+    }
+    if (String(url).startsWith("/api/gallery/identities/alice") && init?.method === "PATCH") {
+      const body = JSON.parse(String(init.body));
+      identities = identities.map((identity) => identity.identity_key === "alice" ? { ...identity, ...body } : identity);
+      return Response.json(identities[0]);
+    }
+    if (url === "/api/gallery/identities/alice/embeddings" && init?.method === "POST") {
+      embeddings = [...embeddings, { id: 8, identity_key: "alice", model: "mobilefacenet", dim: 128, active: true, source_type: "upload" }];
+      identities = identities.map((identity) => identity.identity_key === "alice" ? { ...identity, embedding_count: identity.embedding_count + 1 } : identity);
+      return Response.json([embeddings[embeddings.length - 1]]);
+    }
+    if (url === "/api/gallery/identities/alice/embeddings") return Response.json(embeddings);
+    if (url === "/api/gallery/embeddings/7" && init?.method === "DELETE") {
+      embeddings = embeddings.map((embedding) => embedding.id === 7 ? { ...embedding, active: false } : embedding);
+      return Response.json(embeddings[0]);
+    }
+    if (url === "/api/gallery/enrollment-candidates" && init?.method === "POST") return Response.json(candidateResponse);
+    if (url === "/api/gallery/enrollment-candidates/from-stream" && init?.method === "POST") return Response.json(candidateResponse);
+    if (url === "/api/gallery/refresh" && init?.method === "POST") return Response.json({ accepted: true, message: "gallery reloaded" });
     if (url === "/api/pipeline/start") return Response.json({ accepted: true, status: { state: "running" } });
     if (url === "/api/analytics/rules" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
@@ -136,6 +186,29 @@ describe("dashboard", () => {
     MockPeerConnection.instances.length = 0;
     global.RTCPeerConnection = MockPeerConnection as any;
     HTMLMediaElement.prototype.play = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn(async () => new MockMediaStream([{ stop: vi.fn() }])) }
+    });
+    HTMLCanvasElement.prototype.getContext = vi.fn(() => ({
+      arc: vi.fn(),
+      beginPath: vi.fn(),
+      clearRect: vi.fn(),
+      closePath: vi.fn(),
+      drawImage: vi.fn(),
+      fill: vi.fn(),
+      fillRect: vi.fn(),
+      fillText: vi.fn(),
+      lineTo: vi.fn(),
+      moveTo: vi.fn(),
+      restore: vi.fn(),
+      save: vi.fn(),
+      setLineDash: vi.fn(),
+      setTransform: vi.fn(),
+      stroke: vi.fn(),
+      strokeRect: vi.fn()
+    })) as any;
+    HTMLCanvasElement.prototype.toBlob = vi.fn((callback: BlobCallback) => callback(new Blob(["jpeg"], { type: "image/jpeg" })));
     HTMLCanvasElement.prototype.getBoundingClientRect = () =>
       ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
   });
@@ -160,6 +233,7 @@ describe("dashboard", () => {
     global.fetch = fetchMock as any;
 
     render(<App />);
+    await userEvent.click(screen.getByRole("button", { name: "Config" }));
 
     const selector = (await screen.findByLabelText("Config file")) as HTMLSelectElement;
     await userEvent.selectOptions(selector, "/tmp/alternate.yaml");
@@ -283,5 +357,110 @@ describe("dashboard", () => {
     await userEvent.click(screen.getByLabelText("Delete Lobby line"));
     await waitFor(() => expect(screen.queryByText("Lobby line")).not.toBeInTheDocument());
     expect(fetchMock).toHaveBeenCalledWith("/api/analytics/rules/rule-1", { method: "DELETE" });
+  });
+
+  it("renders gallery identities and commits upload candidates", async () => {
+    const fetchMock = mockFetch();
+    global.fetch = fetchMock as any;
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+
+    const file = new File(["image"], "alice.jpg", { type: "image/jpeg" });
+    await userEvent.upload(screen.getByLabelText("Upload enrollment photo"), file);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/enrollment-candidates", expect.objectContaining({ method: "POST" })));
+    expect(await screen.findByText("face-0 · usable")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Commit selected"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/identities/alice/embeddings", expect.objectContaining({ method: "POST" })));
+    expect(fetchMock).toHaveBeenCalledWith("/api/gallery/refresh", { method: "POST" });
+    expect(await screen.findByText(/gallery reloaded/)).toBeInTheDocument();
+  });
+
+  it("permanently deletes a gallery identity after confirmation", async () => {
+    const baseFetch = mockFetch();
+    let identities = [{ identity_key: "alice", display_name: "Alice", active: true, embedding_count: 1 }];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/gallery/identities" && !init?.method) return Response.json(identities);
+      if (url === "/api/gallery/identities/alice" && init?.method === "DELETE") {
+        identities = [];
+        return Response.json({ deleted: true });
+      }
+      return baseFetch(url, init);
+    });
+    global.fetch = fetchMock as any;
+
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText(/Permanently delete/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Delete permanently"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/identities/alice", { method: "DELETE" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/gallery/refresh", { method: "POST" });
+    await waitFor(() => expect(screen.queryByText("Alice")).not.toBeInTheDocument());
+  });
+
+  it("commits candidates for inactive identities and shows activation message", async () => {
+    const baseFetch = mockFetch();
+    let identities = [{ identity_key: "alice", display_name: "Alice", active: false, embedding_count: 0 }];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/gallery/identities" && !init?.method) return Response.json(identities);
+      if (url === "/api/gallery/identities/alice/embeddings" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body ?? "{}")) as { candidate_ids?: string[] };
+        identities = identities.map((identity) =>
+          identity.identity_key === "alice"
+            ? { ...identity, active: true, embedding_count: identity.embedding_count + (body.candidate_ids?.length ?? 0) }
+            : identity
+        );
+        return Response.json([{ id: 8, identity_key: "alice", model: "mobilefacenet", dim: 128, active: true, source_type: "upload" }]);
+      }
+      return baseFetch(url, init);
+    });
+    global.fetch = fetchMock as any;
+
+    render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    expect(await screen.findByText(/This identity is inactive/)).toBeInTheDocument();
+
+    const file = new File(["image"], "alice.jpg", { type: "image/jpeg" });
+    await userEvent.upload(screen.getByLabelText("Upload enrollment photo"), file);
+    expect(await screen.findByText("face-0 · usable")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Commit selected"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/identities/alice/embeddings", expect.objectContaining({ method: "POST" })));
+    expect(fetchMock).toHaveBeenCalledWith("/api/gallery/refresh", { method: "POST" });
+    expect(await screen.findByText(/identity activated/)).toBeInTheDocument();
+  });
+
+  it("captures webcam and runner stream candidates", async () => {
+    const fetchMock = mockFetch();
+    global.fetch = fetchMock as any;
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    await userEvent.click(screen.getByRole("button", { name: /Browser webcam/ }));
+    await userEvent.click(screen.getByText("Capture webcam"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/enrollment-candidates", expect.objectContaining({ method: "POST" })));
+
+    await userEvent.click(screen.getByRole("button", { name: /Runner snapshot/ }));
+    await userEvent.click(screen.getByText("Capture stream"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/enrollment-candidates/from-stream", expect.objectContaining({ method: "POST" })));
+  });
+
+  it("deactivates gallery identity and samples", async () => {
+    const fetchMock = mockFetch();
+    global.fetch = fetchMock as any;
+    render(<App />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Gallery" }));
+    await userEvent.click(await screen.findByText("Deactivate"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/identities/alice", expect.objectContaining({ method: "PATCH" })));
+
+    await userEvent.click(screen.getByTitle("Deactivate sample 7"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/gallery/embeddings/7", { method: "DELETE" }));
   });
 });

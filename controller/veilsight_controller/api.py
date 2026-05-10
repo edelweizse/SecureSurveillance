@@ -5,7 +5,7 @@ from typing import Annotated, Any
 
 import grpc
 import yaml
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, WebSocket, WebSocketDisconnect
 
 from .analytics_models import (
     AnalyticsEvent,
@@ -16,6 +16,18 @@ from .analytics_models import (
     AnalyticsSummary,
 )
 from .analytics_service import AnalyticsService
+from .gallery_models import (
+    EnrollmentCandidateResponse,
+    EnrollmentStreamCapture,
+    GalleryEmbedding,
+    GalleryEmbeddingCreate,
+    GalleryIdentity,
+    GalleryIdentityCreate,
+    GalleryIdentityUpdate,
+    GalleryRefreshResponse,
+)
+from .gallery_service import GalleryService
+from .gallery_store import GalleryStore
 from .models import (
     ConfigFileInfo,
     ConfigListResponse,
@@ -50,16 +62,22 @@ def get_analytics_service() -> AnalyticsService:
     return RunnerClientRegistry.analytics(settings)
 
 
+def get_gallery_service() -> GalleryService:
+    return RunnerClientRegistry.gallery(settings)
+
+
 SettingsDep = Annotated[ControllerSettings, Depends(get_settings)]
 RunnerDep = Annotated[RunnerClient, Depends(get_runner)]
 CacheDep = Annotated[TelemetryCache, Depends(get_cache)]
 AnalyticsDep = Annotated[AnalyticsService, Depends(get_analytics_service)]
+GalleryDep = Annotated[GalleryService, Depends(get_gallery_service)]
 
 
 class RunnerClientRegistry:
     client: RunnerClient | None = None
     cache = TelemetryCache()
     analytics_service: AnalyticsService | None = None
+    gallery_service: GalleryService | None = None
     _analytics_callback_registered = False
 
     @classmethod
@@ -80,6 +98,12 @@ class RunnerClientRegistry:
             cls.client.add_telemetry_callback(cls.analytics_service.handle_event)
             cls._analytics_callback_registered = True
         return cls.analytics_service
+
+    @classmethod
+    def gallery(cls, request_settings: ControllerSettings) -> GalleryService:
+        if cls.gallery_service is None:
+            cls.gallery_service = GalleryService(request_settings.gallery, GalleryStore(request_settings.gallery.db_path))
+        return cls.gallery_service
 
 
 def payload_to_yaml(payload: ConfigPayload) -> str:
@@ -140,6 +164,14 @@ def translate_streams(raw: dict[str, Any], fallback_base_url: str) -> StreamsRes
             }
         )
     return StreamsResponse(streams=streams, public_base_url=base_url)
+
+
+def snapshot_url_for_stream(raw: dict[str, Any], fallback_base_url: str, stream_id: str, profile: str) -> str:
+    translated = translate_streams(raw, fallback_base_url)
+    for stream in translated.streams:
+        if stream.stream_id == stream_id and stream.profile == profile:
+            return stream.snapshot_url
+    raise HTTPException(status_code=404, detail={"error": "stream_profile_not_found"})
 
 
 def grpc_error(exc: grpc.aio.AioRpcError) -> HTTPException:
@@ -251,6 +283,168 @@ async def streams(client: RunnerDep, request_settings: SettingsDep) -> StreamsRe
     except grpc.aio.AioRpcError as exc:
         raise grpc_error(exc) from exc
     return translate_streams(raw, request_settings.runner_public_base_url)
+
+
+@router.get("/api/gallery/identities", response_model=list[GalleryIdentity])
+async def gallery_identities(gallery: GalleryDep) -> list[GalleryIdentity]:
+    return gallery.store.list_identities()
+
+
+@router.post("/api/gallery/identities", response_model=GalleryIdentity)
+async def create_gallery_identity(payload: GalleryIdentityCreate, gallery: GalleryDep) -> GalleryIdentity:
+    try:
+        return gallery.store.create_identity(
+            display_name=payload.display_name,
+            identity_key=payload.identity_key,
+            active=payload.active,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "invalid_identity", "detail": str(exc)}) from exc
+
+
+@router.patch("/api/gallery/identities/{identity_key}", response_model=GalleryIdentity)
+async def update_gallery_identity(
+    identity_key: str,
+    payload: GalleryIdentityUpdate,
+    gallery: GalleryDep,
+    client: RunnerDep,
+    request_settings: SettingsDep,
+) -> GalleryIdentity:
+    try:
+        identity = gallery.store.update_identity(identity_key, display_name=payload.display_name, active=payload.active)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"error": "invalid_identity", "detail": str(exc)}) from exc
+    if identity is None:
+        raise HTTPException(status_code=404, detail={"error": "identity_not_found"})
+    if request_settings.gallery.auto_refresh and payload.active is not None:
+        try:
+            await client.reload_gallery()
+        except grpc.aio.AioRpcError:
+            pass
+    return identity
+
+
+@router.delete("/api/gallery/identities/{identity_key}")
+async def delete_gallery_identity(
+    identity_key: str,
+    gallery: GalleryDep,
+    client: RunnerDep,
+    request_settings: SettingsDep,
+) -> dict[str, bool]:
+    if not gallery.store.delete_identity(identity_key):
+        raise HTTPException(status_code=404, detail={"error": "identity_not_found"})
+    if request_settings.gallery.auto_refresh:
+        try:
+            await client.reload_gallery()
+        except grpc.aio.AioRpcError:
+            pass
+    return {"deleted": True}
+
+
+@router.get("/api/gallery/identities/{identity_key}/embeddings", response_model=list[GalleryEmbedding])
+async def gallery_identity_embeddings(identity_key: str, gallery: GalleryDep) -> list[GalleryEmbedding]:
+    if gallery.store.get_identity(identity_key) is None:
+        raise HTTPException(status_code=404, detail={"error": "identity_not_found"})
+    return gallery.store.list_embeddings(identity_key)
+
+
+@router.delete("/api/gallery/embeddings/{embedding_id}", response_model=GalleryEmbedding)
+async def delete_gallery_embedding(
+    embedding_id: int,
+    gallery: GalleryDep,
+    client: RunnerDep,
+    request_settings: SettingsDep,
+) -> GalleryEmbedding:
+    embedding = gallery.store.set_embedding_active(embedding_id, False)
+    if embedding is None:
+        raise HTTPException(status_code=404, detail={"error": "embedding_not_found"})
+    if request_settings.gallery.auto_refresh:
+        try:
+            await client.reload_gallery()
+        except grpc.aio.AioRpcError as exc:
+            raise grpc_error(exc) from exc
+    return embedding
+
+
+@router.post("/api/gallery/enrollment-candidates", response_model=EnrollmentCandidateResponse)
+async def gallery_enrollment_candidates(
+    gallery: GalleryDep,
+    client: RunnerDep,
+    file: Annotated[UploadFile, File()],
+) -> EnrollmentCandidateResponse:
+    data = await file.read()
+    try:
+        return await gallery.analyze_image(
+            image_bytes=data,
+            mime_type=file.content_type or "application/octet-stream",
+            source_type="upload",
+            source_ref=file.filename,
+            runner=client,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise grpc_error(exc) from exc
+
+
+@router.post("/api/gallery/enrollment-candidates/from-stream", response_model=EnrollmentCandidateResponse)
+async def gallery_enrollment_candidates_from_stream(
+    payload: EnrollmentStreamCapture,
+    gallery: GalleryDep,
+    client: RunnerDep,
+    request_settings: SettingsDep,
+) -> EnrollmentCandidateResponse:
+    try:
+        raw_streams = await client.streams()
+        snapshot_url = snapshot_url_for_stream(
+            raw_streams,
+            request_settings.runner_public_base_url,
+            payload.stream_id,
+            payload.profile,
+        )
+        return await gallery.analyze_stream_snapshot(
+            stream_id=payload.stream_id,
+            profile=payload.profile,
+            runner=client,
+            snapshot_url=snapshot_url,
+        )
+    except grpc.aio.AioRpcError as exc:
+        raise grpc_error(exc) from exc
+
+
+@router.get("/api/gallery/enrollment-candidates/{enrollment_id}/image/{image_id}")
+async def gallery_enrollment_image(enrollment_id: str, image_id: str, gallery: GalleryDep) -> Response:
+    data, mime_type = gallery.get_image(enrollment_id, image_id)
+    return Response(content=data, media_type=mime_type)
+
+
+@router.post("/api/gallery/identities/{identity_key}/embeddings", response_model=list[GalleryEmbedding])
+async def commit_gallery_embeddings(
+    identity_key: str,
+    payload: GalleryEmbeddingCreate,
+    gallery: GalleryDep,
+    client: RunnerDep,
+) -> list[GalleryEmbedding]:
+    try:
+        return await gallery.commit_candidates(
+            identity_key=identity_key,
+            enrollment_id=payload.enrollment_id,
+            candidate_ids=payload.candidate_ids,
+            source_ref=payload.source_ref,
+            runner=client,
+        )
+    except grpc.aio.AioRpcError:
+        return gallery.store.list_embeddings(identity_key)[: len(payload.candidate_ids)]
+
+
+@router.post("/api/gallery/refresh", response_model=GalleryRefreshResponse)
+async def refresh_gallery(client: RunnerDep) -> GalleryRefreshResponse:
+    try:
+        raw = await client.reload_gallery()
+    except grpc.aio.AioRpcError as exc:
+        raise grpc_error(exc) from exc
+    return GalleryRefreshResponse(
+        accepted=bool(raw.get("accepted", False)),
+        message=str(raw.get("message", "")),
+    )
 
 
 @router.get("/api/metrics")

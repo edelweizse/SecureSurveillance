@@ -47,6 +47,7 @@ namespace {
     veilsight::FrameCtx frame(int64_t frame_id) {
         veilsight::FrameCtx f;
         f.stream_id = "cam0";
+        f.source_type = "file";
         f.frame_id = frame_id;
         f.inf_w = 640;
         f.inf_h = 480;
@@ -171,6 +172,45 @@ namespace {
               "assigned full-frame face should keep FullFrame source");
     }
 
+    void test_unassigned_webcam_faces_become_face_only_boxes() {
+        auto cfg = test_face_detector_config();
+        FakeFaceDetector detector;
+        detector.responses.push_back({
+            face(140.0f, 70.0f, 48.0f, 48.0f),
+            face(320.0f, 80.0f, 44.0f, 44.0f),
+        });
+
+        auto state = std::make_shared<veilsight::FaceStateStore>();
+        veilsight::HybridFacePolicy policy(cfg, state);
+        auto f = frame(31);
+        f.source_type = "webcam";
+        std::vector<veilsight::Box> tracks;
+
+        policy.annotate(f, tracks, detector);
+
+        check(tracks.size() == 2, "unassigned webcam faces should be emitted as face-only boxes");
+        check(tracks[0].id < 0 && tracks[1].id < 0, "face-only boxes should use synthetic negative IDs");
+        check(tracks[0].privacy_action == "anonymize", "face-only boxes should be anonymized");
+        check(tracks[0].recognition_state == "face_only", "face-only boxes should be labeled for diagnostics");
+        check(tracks[0].face.has_value(), "face-only boxes should retain face metadata");
+    }
+
+    void test_unassigned_non_webcam_faces_are_ignored() {
+        auto cfg = test_face_detector_config();
+        FakeFaceDetector detector;
+        detector.responses.push_back({face(140.0f, 70.0f, 48.0f, 48.0f)});
+
+        auto state = std::make_shared<veilsight::FaceStateStore>();
+        veilsight::HybridFacePolicy policy(cfg, state);
+        auto f = frame(32);
+        f.source_type = "rtsp";
+        std::vector<veilsight::Box> tracks;
+
+        policy.annotate(f, tracks, detector);
+
+        check(tracks.empty(), "unassigned non-webcam faces should not be emitted as face-only boxes");
+    }
+
     void test_face_detector_runs_full_frame_each_frame() {
         auto cfg = test_face_detector_config();
         FakeFaceDetector detector;
@@ -222,6 +262,8 @@ int main() {
     test_identity_transform_maps_geometry_unchanged();
     test_translation_transform_maps_face_to_frame();
     test_full_frame_assignment_chooses_correct_track();
+    test_unassigned_webcam_faces_become_face_only_boxes();
+    test_unassigned_non_webcam_faces_are_ignored();
     test_face_detector_runs_full_frame_each_frame();
     test_noop_recognizer_passes_tracks_through();
 

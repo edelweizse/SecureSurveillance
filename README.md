@@ -237,6 +237,8 @@ Runner HTTP:
 
 ## Troubleshooting
 
+- Missing webcam source: install the GStreamer V4L2 plugin so `gst-inspect-1.0 v4l2src` succeeds. On Debian/Ubuntu this is usually provided by `gstreamer1.0-plugins-good`; on Arch by `gst-plugins-good`. If running inside Conda, install the matching Conda plugin package or build/run against system GStreamer consistently.
+- Webcam produces no frames: check supported modes with `v4l2-ctl --device=/dev/video0 --list-formats-ext`, then set `streams[].webcam.width`, `height`, `fps`, and `mjpg` to a listed capture mode. Use `outputs.fps` to throttle processing/display FPS.
 - Missing `webrtcbin`: install GStreamer WebRTC plugins. Runner still starts with MJPEG fallback and reports WebRTC unavailable.
 - Missing H.264 encoder: install one of `v4l2h264enc`, `vaapih264enc`, `nvh264enc`, `x264enc`, or `openh264enc`, or set `streaming.encoder` to an installed encoder.
 - Protobuf mismatch: CMake checks `protoc` against pkg-config protobuf and fails early if major/minor versions differ.
