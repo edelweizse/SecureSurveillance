@@ -54,7 +54,7 @@ runtime:
       encoder_in_capacity: 5
   anonymizer:
     model_instances: 1
-    method: "noop"
+    method: "pixelate"
     pixelation_divisor: 10
     blur_kernel: 31
 
@@ -77,9 +77,9 @@ modules:
   tracker:
     type: "bytetrack"
     bytetrack:
-      high_thresh: 0.45
-      low_thresh: 0.10
-      new_track_thresh: 0.60
+      high_thresh: 0.25
+      low_thresh: 0.05
+      new_track_thresh: 0.25
       match_iou_thresh: 0.30
       low_match_iou_thresh: 0.50
       unconfirmed_match_iou_thresh: 0.30
@@ -88,7 +88,7 @@ modules:
       min_box_area: 0.0
       fuse_score: false
       scene_grid:
-        enabled: false
+        enabled: true
         rows: 36
         cols: 64
         association_weight: 0.15
