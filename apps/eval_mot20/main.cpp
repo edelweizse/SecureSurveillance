@@ -70,6 +70,7 @@ static void print_usage(const char* prog) {
               << "  --output <dir>              Tracker output directory (default: results)\n"
               << "  --tracker-name <name>       Tracker folder name (default: veilsight_tracker)\n"
               << "  --detector-thresh <float>   Override detector score threshold\n"
+              << "  --detections-only           Write raw detections with unique fake IDs, no tracking\n"
               << "  --help                      Show this message\n";
 }
 
@@ -85,6 +86,7 @@ int main(int argc, char** argv) {
     std::string output_dir = "results";
     std::string tracker_name = "veilsight_tracker";
     float detector_thresh_override = -1.0f;
+    bool detections_only = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -101,6 +103,8 @@ int main(int argc, char** argv) {
             tracker_name = argv[++i];
         } else if (arg == "--detector-thresh" && i + 1 < argc) {
             detector_thresh_override = std::stof(argv[++i]);
+        } else if (arg == "--detections-only") {
+            detections_only = true;
         } else if (arg.empty() || arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << "\n";
             print_usage(argv[0]);
@@ -137,7 +141,9 @@ int main(int argc, char** argv) {
     std::unique_ptr<ITracker> tracker;
     try {
         detector = create_person_detector(cfg.modules.person_detector);
-        tracker = create_tracker(cfg.modules.tracker);
+        if (!detections_only) {
+            tracker = create_tracker(cfg.modules.tracker);
+        }
     } catch (const std::exception& e) {
         std::cerr << "Model init error: " << e.what() << "\n";
         return 1;
@@ -210,7 +216,11 @@ int main(int argc, char** argv) {
 
     std::cout << "Evaluating " << selected.size() << " sequence(s) from MOT20-" << split << "\n";
     std::cout << "Detector: yolox_nano (thresh=" << cfg.modules.person_detector.yolox.score_threshold << ")\n";
-    std::cout << "Tracker:  " << cfg.modules.tracker.type << "\n";
+    if (detections_only) {
+        std::cout << "Mode:     detections-only (no tracking)\n";
+    } else {
+        std::cout << "Tracker:  " << cfg.modules.tracker.type << "\n";
+    }
     std::cout << "Output:   " << tracker_out << "\n\n";
 
     bool any_error = false;
@@ -226,6 +236,7 @@ int main(int argc, char** argv) {
 
         std::cout << "Processing " << seq.name << " (" << seq.seq_length << " frames)..." << std::flush;
         int written = 0;
+        int fake_id = 1;
 
         for (int t = 1; t <= seq.seq_length; ++t) {
             std::ostringstream img_name;
@@ -247,24 +258,37 @@ int main(int argc, char** argv) {
 
             auto detections = detector->detect(frame);
 
-            TrackerFrameInfo frame_info;
-            frame_info.stream_id = seq.name;
-            frame_info.frame_id = t;
-            frame_info.width = frame.cols;
-            frame_info.height = frame.rows;
+            if (detections_only) {
+                for (const auto& box : detections) {
+                    out << t << ","
+                        << fake_id++ << ","
+                        << box.x << ","
+                        << box.y << ","
+                        << box.w << ","
+                        << box.h << ","
+                        << box.score << ",-1,-1,-1\n";
+                    ++written;
+                }
+            } else {
+                TrackerFrameInfo frame_info;
+                frame_info.stream_id = seq.name;
+                frame_info.frame_id = t;
+                frame_info.width = frame.cols;
+                frame_info.height = frame.rows;
 
-            auto tracks = tracker->update(frame_info, detections);
+                auto tracks = tracker->update(frame_info, detections);
 
-            for (const auto& box : tracks) {
-                if (box.id < 1) continue; // skip unconfirmed / invalid
-                out << t << ","
-                    << box.id << ","
-                    << box.x << ","
-                    << box.y << ","
-                    << box.w << ","
-                    << box.h << ","
-                    << box.score << ",-1,-1,-1\n";
-                ++written;
+                for (const auto& box : tracks) {
+                    if (box.id < 1) continue; // skip unconfirmed / invalid
+                    out << t << ","
+                        << box.id << ","
+                        << box.x << ","
+                        << box.y << ","
+                        << box.w << ","
+                        << box.h << ","
+                        << box.score << ",-1,-1,-1\n";
+                    ++written;
+                }
             }
         }
 
