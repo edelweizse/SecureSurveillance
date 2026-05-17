@@ -28,6 +28,7 @@ namespace veilsight {
         pixelation_divisor_ = std::max(2, cfg.pixelation_divisor);
         blur_kernel_ = std::max(3, cfg.blur_kernel);
         if ((blur_kernel_ % 2) == 0) blur_kernel_ += 1;
+        face_only_when_available_ = cfg.face_only_when_available;
     }
 
     void Anonymizer::apply(cv::Mat& ui_frame,
@@ -42,8 +43,23 @@ namespace veilsight {
             if (b.privacy_action != "anonymize") continue;
             if (b.w <= 1.0f || b.h <= 1.0f) continue;
 
-            const cv::Rect roi_rect =
-                map_box_to_ui_(b, sx, sy, tx, ty, ui_frame.cols, ui_frame.rows);
+            Box roi_box = b;
+            bool using_face_roi = false;
+            if (face_only_when_available_ && b.face.has_value() &&
+                b.face->bbox.w > 1.0f && b.face->bbox.h > 1.0f) {
+                roi_box.x = b.face->bbox.x;
+                roi_box.y = b.face->bbox.y;
+                roi_box.w = b.face->bbox.w;
+                roi_box.h = b.face->bbox.h;
+                roi_box.occluded = false;
+                using_face_roi = true;
+            }
+
+            cv::Rect roi_rect =
+                map_box_to_ui_(roi_box, sx, sy, tx, ty, ui_frame.cols, ui_frame.rows);
+            if (using_face_roi && (roi_rect.width < 2 || roi_rect.height < 2)) {
+                roi_rect = map_box_to_ui_(b, sx, sy, tx, ty, ui_frame.cols, ui_frame.rows);
+            }
             if (roi_rect.width < 2 || roi_rect.height < 2) continue;
 
             cv::Mat roi = ui_frame(roi_rect);

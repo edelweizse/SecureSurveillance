@@ -436,6 +436,7 @@ namespace {
             "  face_detector:\n"
             "    enabled: true\n"
             "    type: \"scrfd\"\n"
+            "    association_mode: \"independent\"\n"
             "    workers: 2\n"
             "    scrfd:\n"
             "      variant: \"500m_landmarks\"\n"
@@ -480,6 +481,8 @@ namespace {
         check(cfg.modules.recognizer.gallery_path == "/legacy/gallery",
               "recognizer.gallery_path should parse without mapping into identity");
         check(cfg.modules.face_detector.type == "scrfd", "face detector type should parse");
+        check(cfg.modules.face_detector.association_mode == "independent",
+              "face detector association mode should parse");
         check(cfg.modules.face_detector.workers == 2,
               "face detector worker count should parse independently");
         check(cfg.modules.face_detector.scrfd.variant == "500ml",
@@ -631,6 +634,8 @@ namespace {
         check(cfg.modules.person_detector.workers == 2, "person_detector.model_instances should parse");
         check(cfg.modules.face_detector.type == "scrfd",
               "modules.face_detector should parse into face detector config");
+        check(cfg.modules.face_detector.association_mode == "independent",
+              "modules.face_detector association mode should parse");
         check(cfg.modules.face_detector.workers == 2,
               "face_detector.model_instances should parse");
         check(cfg.modules.face_detector.scrfd.input_w == 640,
@@ -651,6 +656,8 @@ namespace {
               "runtime anonymizer model_instances should parse");
         check(cfg.runtime.anonymizer.method == "pixelate",
               "runtime anonymizer method should parse");
+        check(!cfg.runtime.anonymizer.face_only_when_available,
+              "runtime anonymizer face_only_when_available should default to false");
     }
 
     void test_model_instances_aliases_workers() {
@@ -684,6 +691,7 @@ namespace {
             "  face_detector:\n"
             "    enabled: true\n"
             "    type: \"scrfd\"\n"
+            "    association_mode: \"person_bbox\"\n"
             "    model_instances: 3\n"
             "    scrfd:\n"
             "      variant: \"25g_landmarks\"\n"
@@ -695,6 +703,8 @@ namespace {
         std::filesystem::remove(path);
 
         check(cfg.modules.face_detector.type == "scrfd", "top-level face detector type should parse");
+        check(cfg.modules.face_detector.association_mode == "person_bbox",
+              "top-level face detector association_mode should parse");
         check(cfg.modules.face_detector.workers == 3,
               "top-level face_detector.model_instances should parse");
         check(cfg.modules.face_detector.scrfd.variant == "2gl",
@@ -721,6 +731,16 @@ namespace {
               "disabled top-level face_detector should set detector type to none");
         check(cfg.modules.recognizer.type == "noop",
               "disabled top-level face_detector should not alter recognizer config");
+    }
+
+    void test_face_detector_rejects_unknown_association_mode() {
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  face_detector:\n"
+                  "    enabled: true\n"
+                  "    type: \"scrfd\"\n"
+                  "    association_mode: \"webcam\"\n")),
+              "face_detector association_mode should reject unknown values");
     }
 
     void test_legacy_inference_config_paths_are_rejected() {
@@ -763,7 +783,8 @@ namespace {
             "    model_instances: 4\n"
             "    method: \"blur\"\n"
             "    pixelation_divisor: 12\n"
-            "    blur_kernel: 33\n");
+            "    blur_kernel: 33\n"
+            "    face_only_when_available: true\n");
 
         const std::string path = write_yaml_file("veilsight_runtime", yaml);
         const auto cfg = veilsight::load_config_yaml(path);
@@ -801,6 +822,8 @@ namespace {
               "runtime anonymizer.pixelation_divisor should parse");
         check(cfg.runtime.anonymizer.blur_kernel == 33,
               "runtime anonymizer.blur_kernel should parse");
+        check(cfg.runtime.anonymizer.face_only_when_available,
+              "runtime anonymizer.face_only_when_available should parse");
     }
 
     void test_runtime_config_rejects_invalid_values() {
@@ -852,6 +875,7 @@ int main() {
     test_model_instances_aliases_workers();
     test_face_detector_top_level_config_parses();
     test_face_detector_can_be_disabled();
+    test_face_detector_rejects_unknown_association_mode();
     test_legacy_inference_config_paths_are_rejected();
     test_runtime_config_parses();
     test_runtime_config_rejects_invalid_values();

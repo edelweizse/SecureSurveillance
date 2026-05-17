@@ -83,9 +83,8 @@ runtime:
   anonymizer:
     model_instances: 1
     method: "pixelate"
-    pixelation_divisor: 50
+    pixelation_divisor: 10
     blur_kernel: 31
-    face_only_when_available: true
 
 modules:
   person_detector:
@@ -102,7 +101,7 @@ modules:
       nms_threshold: 0.45
       top_k: 300
       class_id: 0
-      ncnn_threads: 2
+      ncnn_threads: 1
       letterbox: true
       decoded_output: false
 
@@ -178,9 +177,6 @@ modules:
   face_detector:
     enabled: true
     type: "scrfd"
-    # "person_bbox" attaches only faces inside tracked person boxes.
-    # "independent" also emits unassigned face-only boxes without requiring a person box.
-    association_mode: "independent"
     model_instances: 2
     scrfd:
       variant: "2gl"
@@ -259,11 +255,11 @@ streams:
   - id: "file0"
     type: "file"
     file:
-      path: "../../../assets/cpdf_p2e_s5_c1.mp4"
-      fps: 5
+      path: "../../../assets/output.mp4"
+      fps: 4
       loop: true
     outputs:
-      fps: 5
+      fps: 4
       profiles:
         inference:
           width: 1088
@@ -278,7 +274,7 @@ streams:
           interp: "linear"
           jpeg_quality: 75
     replicate:
-      count: 1
+      count: 2
       # ids:
       #   - "file0_a"
       #   - "file0_b"

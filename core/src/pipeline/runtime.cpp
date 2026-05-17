@@ -209,6 +209,7 @@ namespace veilsight {
             acfg.method = opt_.anonymizer_method;
             acfg.pixelation_divisor = opt_.anonymizer_pixelation_divisor;
             acfg.blur_kernel = opt_.anonymizer_blur_kernel;
+            acfg.face_only_when_available = opt_.anonymizer_face_only_when_available;
             anonymizer_ = std::make_unique<Anonymizer>(std::move(acfg));
         } catch (const std::exception& e) {
             std::cerr << "[Pipeline](start) anonymizer init failed: " << e.what() << "\n";

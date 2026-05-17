@@ -57,6 +57,7 @@ runtime:
     method: "pixelate"
     pixelation_divisor: 10
     blur_kernel: 31
+    face_only_when_available: false
 
 modules:
   person_detector:

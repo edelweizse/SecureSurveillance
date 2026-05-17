@@ -14,6 +14,7 @@ namespace veilsight {
           face_probe_planner_(face_detector),
           face_result_applier_(face_detector, face_probe_planner_.state_store()),
           face_detection_enabled_(face_detection_enabled),
+          independent_face_detection_(face_detector.association_mode == "independent"),
           reorder_window_(std::max<int64_t>(0, reorder_window)),
           pending_limit_(std::max<size_t>(1, pending_limit)) {}
 
@@ -30,7 +31,13 @@ namespace veilsight {
 
     void StreamCoordinator::push_face_result(FaceDetectionResult result) {
         auto it = pending_face_frames_.find(result.frame_id);
-        if (it == pending_face_frames_.end()) return;
+        if (it == pending_face_frames_.end()) {
+            if (independent_face_detection_ &&
+                (next_commit_frame_id_ < 0 || result.frame_id >= next_commit_frame_id_)) {
+                early_face_results_[result.frame_id].push_back(std::move(result));
+            }
+            return;
+        }
         auto& pending = it->second;
         if (pending.pending_probe_ids.erase(result.probe_id) == 0) return;
         pending.results.push_back(std::move(result));
@@ -47,6 +54,7 @@ namespace veilsight {
     }
 
     void StreamCoordinator::drain_ready(const Callbacks& callbacks) {
+        drain_independent_face_probes_(callbacks);
         drain_tracking_(callbacks);
         drain_face_ready_(callbacks);
         drain_recognition_ready_(callbacks);
@@ -100,6 +108,28 @@ namespace veilsight {
         }
     }
 
+    void StreamCoordinator::drain_independent_face_probes_(const Callbacks& callbacks) {
+        if (!face_detection_enabled_ || !independent_face_detection_ || !callbacks.on_face_probes_ready) return;
+
+        for (auto& [frame_id, frame] : pending_frames_) {
+            if (!frame) continue;
+            if (next_tracker_frame_id_ >= 0 && frame_id < next_tracker_frame_id_) continue;
+            if (queued_independent_face_probe_ids_.count(frame_id) > 0) continue;
+            if (pending_face_frames_.count(frame_id) > 0) continue;
+
+            std::vector<Box> tracks;
+            auto probes = face_probe_planner_.plan(*frame, tracks);
+            if (probes.empty()) continue;
+
+            auto& probe_ids = queued_independent_face_probe_ids_[frame_id];
+            for (const auto& probe : probes) {
+                probe_ids.insert(probe.probe_id);
+            }
+            latest_face_queued_frame_id_ = std::max(latest_face_queued_frame_id_, frame_id);
+            callbacks.on_face_probes_ready(std::move(probes));
+        }
+    }
+
     void StreamCoordinator::process_tracked_frame_(const FramePtr& frame,
                                                   const std::vector<Box>& detections,
                                                   const Callbacks& callbacks) {
@@ -129,7 +159,17 @@ namespace veilsight {
 
         std::vector<FaceDetectionTask> probes;
         if (face_detection_enabled_) {
-            probes = face_probe_planner_.plan(*frame, pending.tracks);
+            if (independent_face_detection_) {
+                auto queued_it = queued_independent_face_probe_ids_.find(frame->frame_id);
+                if (queued_it != queued_independent_face_probe_ids_.end()) {
+                    pending.pending_probe_ids = std::move(queued_it->second);
+                    queued_independent_face_probe_ids_.erase(queued_it);
+                } else {
+                    probes = face_probe_planner_.plan(*frame, pending.tracks);
+                }
+            } else {
+                probes = face_probe_planner_.plan(*frame, pending.tracks);
+            }
         } else {
             for (auto& track : pending.tracks) {
                 track.privacy_action = "anonymize";
@@ -141,10 +181,20 @@ namespace veilsight {
             next_commit_frame_id_ = frame->frame_id;
         }
 
+        auto early_it = early_face_results_.find(frame->frame_id);
+        if (early_it != early_face_results_.end()) {
+            for (auto& result : early_it->second) {
+                if (pending.pending_probe_ids.erase(result.probe_id) > 0) {
+                    pending.results.push_back(std::move(result));
+                }
+            }
+            early_face_results_.erase(early_it);
+        }
+
         if (probes.empty()) {
             pending_face_frames_[frame->frame_id] = std::move(pending);
             auto it = pending_face_frames_.find(frame->frame_id);
-            if (it != pending_face_frames_.end()) {
+            if (it != pending_face_frames_.end() && it->second.pending_probe_ids.empty()) {
                 queue_recognition_(it->second, callbacks);
             }
             return;
@@ -285,6 +335,12 @@ namespace veilsight {
         }
         while (pending_person_detections_.size() > pending_limit_) {
             pending_person_detections_.erase(pending_person_detections_.begin());
+        }
+        while (queued_independent_face_probe_ids_.size() > pending_limit_) {
+            queued_independent_face_probe_ids_.erase(queued_independent_face_probe_ids_.begin());
+        }
+        while (early_face_results_.size() > pending_limit_) {
+            early_face_results_.erase(early_face_results_.begin());
         }
         while (pending_face_frames_.size() > pending_limit_) {
             auto it = pending_face_frames_.begin();
