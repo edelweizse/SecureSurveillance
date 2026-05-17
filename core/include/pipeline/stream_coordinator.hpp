@@ -46,6 +46,7 @@ namespace veilsight {
         };
 
         void drain_tracking_(const Callbacks& callbacks);
+        void drain_independent_face_probes_(const Callbacks& callbacks);
         void process_tracked_frame_(const FramePtr& frame,
                                     const std::vector<Box>& detections,
                                     const Callbacks& callbacks);
@@ -60,6 +61,7 @@ namespace veilsight {
         FaceProbePlanner face_probe_planner_;
         FaceResultApplier face_result_applier_;
         bool face_detection_enabled_ = false;
+        bool independent_face_detection_ = false;
         int64_t reorder_window_ = 5;
         size_t pending_limit_ = 500;
 
@@ -72,6 +74,8 @@ namespace veilsight {
 
         std::map<int64_t, FramePtr> pending_frames_;
         std::map<int64_t, PersonDetectionResult> pending_person_detections_;
+        std::map<int64_t, std::set<std::string>> queued_independent_face_probe_ids_;
+        std::map<int64_t, std::vector<FaceDetectionResult>> early_face_results_;
         std::map<int64_t, PendingFaceFrame> pending_face_frames_;
         std::map<int64_t, RecognitionResult> pending_recognitions_;
         std::map<int64_t, IdentityResult> pending_identities_;

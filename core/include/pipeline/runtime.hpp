@@ -55,6 +55,7 @@ namespace veilsight {
             std::string anonymizer_method = "pixelate";
             int anonymizer_pixelation_divisor = 10;
             int anonymizer_blur_kernel = 31;
+            bool anonymizer_face_only_when_available = false;
 
             MetricsConfig metrics;
         };

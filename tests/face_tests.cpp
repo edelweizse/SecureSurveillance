@@ -172,8 +172,9 @@ namespace {
               "assigned full-frame face should keep FullFrame source");
     }
 
-    void test_unassigned_webcam_faces_become_face_only_boxes() {
+    void test_independent_faces_become_face_only_boxes() {
         auto cfg = test_face_detector_config();
+        cfg.association_mode = "independent";
         FakeFaceDetector detector;
         detector.responses.push_back({
             face(140.0f, 70.0f, 48.0f, 48.0f),
@@ -183,20 +184,21 @@ namespace {
         auto state = std::make_shared<veilsight::FaceStateStore>();
         veilsight::HybridFacePolicy policy(cfg, state);
         auto f = frame(31);
-        f.source_type = "webcam";
+        f.source_type = "rtsp";
         std::vector<veilsight::Box> tracks;
 
         policy.annotate(f, tracks, detector);
 
-        check(tracks.size() == 2, "unassigned webcam faces should be emitted as face-only boxes");
+        check(tracks.size() == 2, "independent unassigned faces should be emitted as face-only boxes");
         check(tracks[0].id < 0 && tracks[1].id < 0, "face-only boxes should use synthetic negative IDs");
         check(tracks[0].privacy_action == "anonymize", "face-only boxes should be anonymized");
         check(tracks[0].recognition_state == "face_only", "face-only boxes should be labeled for diagnostics");
         check(tracks[0].face.has_value(), "face-only boxes should retain face metadata");
     }
 
-    void test_unassigned_non_webcam_faces_are_ignored() {
+    void test_person_bbox_mode_ignores_unassigned_faces() {
         auto cfg = test_face_detector_config();
+        cfg.association_mode = "person_bbox";
         FakeFaceDetector detector;
         detector.responses.push_back({face(140.0f, 70.0f, 48.0f, 48.0f)});
 
@@ -208,7 +210,7 @@ namespace {
 
         policy.annotate(f, tracks, detector);
 
-        check(tracks.empty(), "unassigned non-webcam faces should not be emitted as face-only boxes");
+        check(tracks.empty(), "person_bbox mode should ignore faces outside person tracks");
     }
 
     void test_face_detector_runs_full_frame_each_frame() {
@@ -262,8 +264,8 @@ int main() {
     test_identity_transform_maps_geometry_unchanged();
     test_translation_transform_maps_face_to_frame();
     test_full_frame_assignment_chooses_correct_track();
-    test_unassigned_webcam_faces_become_face_only_boxes();
-    test_unassigned_non_webcam_faces_are_ignored();
+    test_independent_faces_become_face_only_boxes();
+    test_person_bbox_mode_ignores_unassigned_faces();
     test_face_detector_runs_full_frame_each_frame();
     test_noop_recognizer_passes_tracks_through();
 

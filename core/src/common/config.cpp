@@ -316,6 +316,7 @@ namespace veilsight {
         if (!n) return cfg;
 
         cfg.type = get_str(n, "type", cfg.type);
+        cfg.association_mode = get_str(n, "association_mode", cfg.association_mode);
         cfg.workers = get_positive_int_alias(n, "model_instances", "workers", cfg.workers);
         cfg.yunet = parse_yunet_module_config(n["yunet"]);
         cfg.scrfd = parse_scrfd_module_config(n["scrfd"], cfg.scrfd);
@@ -424,6 +425,8 @@ namespace veilsight {
         cfg.method = get_str(n, "method", cfg.method);
         cfg.pixelation_divisor = get_int_min(n, "pixelation_divisor", cfg.pixelation_divisor, 2);
         cfg.blur_kernel = get_int_min(n, "blur_kernel", cfg.blur_kernel, 3);
+        cfg.face_only_when_available =
+            get_bool(n, "face_only_when_available", cfg.face_only_when_available);
         return cfg;
     }
 
@@ -652,6 +655,11 @@ namespace veilsight {
         require_int_min(modules.person_detector.scrfd.ncnn_threads, 1, "modules.person_detector.scrfd.ncnn_threads");
         require_int_min(modules.person_detector.yolox.ncnn_threads, 1, "modules.person_detector.yolox.ncnn_threads");
         if (modules.face_detector.type != "none") {
+            if (modules.face_detector.association_mode != "person_bbox" &&
+                modules.face_detector.association_mode != "independent") {
+                throw std::runtime_error(
+                    "[Config] modules.face_detector.association_mode must be person_bbox or independent");
+            }
             require_int_min(modules.face_detector.workers, 1, "modules.face_detector.model_instances");
             require_int_min(modules.face_detector.yunet.ncnn_threads, 1,
                             "modules.face_detector.yunet.ncnn_threads");

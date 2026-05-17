@@ -46,6 +46,16 @@ namespace {
         return f;
     }
 
+    veilsight::FaceObservation face(float x = 10.0f, float y = 10.0f, float w = 20.0f, float h = 20.0f) {
+        veilsight::FaceObservation f;
+        f.bbox.x = x;
+        f.bbox.y = y;
+        f.bbox.w = w;
+        f.bbox.h = h;
+        f.score = 0.9f;
+        return f;
+    }
+
     class EchoTracker final : public veilsight::ITracker {
     public:
         std::vector<veilsight::Box> update(const veilsight::TrackerFrameInfo& info,
@@ -215,6 +225,66 @@ namespace {
               "coordinator should order face, recognizer, identity, and commit callbacks");
     }
 
+    void test_independent_face_mode_queues_face_before_person_detections() {
+        veilsight::FaceDetectorModuleConfig face_detector;
+        face_detector.association_mode = "independent";
+        veilsight::StreamCoordinator coordinator(
+            std::make_unique<EchoTracker>(),
+            face_detector,
+            true,
+            5,
+            32);
+
+        std::vector<std::string> events;
+        veilsight::StreamCoordinator::Callbacks callbacks;
+        callbacks.on_face_probes_ready = [&events, &coordinator](std::vector<veilsight::FaceDetectionTask> probes) {
+            events.push_back("face");
+            for (const auto& probe : probes) {
+                veilsight::FaceDetectionResult result;
+                result.stream_id = probe.stream_id;
+                result.frame_id = probe.frame_id;
+                result.probe_id = probe.probe_id;
+                result.kind = probe.kind;
+                result.faces = {face(42.0f, 12.0f, 18.0f, 18.0f)};
+                coordinator.push_face_result(std::move(result));
+            }
+        };
+        callbacks.on_recognition_ready = [&events, &coordinator](veilsight::RecognitionTask task) {
+            events.push_back("recognition");
+            check(task.tracks.size() == 1 && task.tracks[0].recognition_state == "face_only",
+                  "independent face mode should pass unassigned face-only boxes to recognition");
+            veilsight::RecognitionResult result;
+            result.stream_id = task.stream_id;
+            result.frame_id = task.frame_id;
+            result.frame = task.frame;
+            result.tracks = task.tracks;
+            coordinator.push_recognition_result(std::move(result));
+        };
+        callbacks.on_identity_ready = [&events, &coordinator](veilsight::IdentityTask task) {
+            events.push_back("identity");
+            veilsight::IdentityResult result;
+            result.stream_id = task.stream_id;
+            result.frame_id = task.frame_id;
+            result.frame = task.frame;
+            result.tracks = task.tracks;
+            coordinator.push_identity_result(std::move(result));
+        };
+        callbacks.on_frame_committed = [&events](const veilsight::FramePtr&) {
+            events.push_back("commit");
+        };
+
+        coordinator.push_frame(frame(20));
+        coordinator.drain_ready(callbacks);
+        check((events == std::vector<std::string>{"face"}),
+              "independent face mode should queue face detection before person detections arrive");
+
+        coordinator.push_person_detection(veilsight::PersonDetectionResult{"cam0", 20, {}});
+        coordinator.drain_ready(callbacks);
+        coordinator.drain_ready(callbacks);
+        check((events == std::vector<std::string>{"face", "recognition", "identity", "commit"}),
+              "early independent face results should join the frame after tracking catches up");
+    }
+
     void test_anonymizer_skips_non_anonymize_boxes() {
         cv::Mat image(24, 48, CV_8UC3);
         for (int y = 0; y < image.rows; ++y) {
@@ -240,6 +310,56 @@ namespace {
               "anonymize privacy_action should mutate the anonymized ROI");
         check(cv::norm(image(right), original(right), cv::NORM_L1) == 0.0,
               "non-anonymize privacy_action should leave the ROI untouched");
+    }
+
+    cv::Mat gradient_image(int rows = 40, int cols = 56) {
+        cv::Mat image(rows, cols, CV_8UC3);
+        for (int y = 0; y < image.rows; ++y) {
+            for (int x = 0; x < image.cols; ++x) {
+                image.at<cv::Vec3b>(y, x) = cv::Vec3b(static_cast<uchar>((x * 5 + y) % 255),
+                                                      static_cast<uchar>((y * 9 + x) % 255),
+                                                      static_cast<uchar>((x * 3 + y * 7) % 255));
+            }
+        }
+        return image;
+    }
+
+    void test_anonymizer_face_only_mode_uses_face_roi_when_available() {
+        cv::Mat image = gradient_image();
+        const cv::Mat original = image.clone();
+
+        veilsight::Box anonymize = box(8, 8, 28, 22);
+        anonymize.privacy_action = "anonymize";
+        anonymize.face = face(18, 12, 6, 6);
+
+        veilsight::AnonymizerConfig cfg;
+        cfg.face_only_when_available = true;
+        veilsight::Anonymizer anonymizer(cfg);
+        anonymizer.apply(image, {anonymize}, 1.0f, 1.0f, 0.0f, 0.0f);
+
+        const cv::Rect face_region(17, 11, 8, 8);
+        const cv::Rect body_only_region(9, 9, 6, 6);
+        check(cv::norm(image(face_region), original(face_region), cv::NORM_L1) > 0.0,
+              "face-only anonymizer mode should mutate the detected face ROI");
+        check(cv::norm(image(body_only_region), original(body_only_region), cv::NORM_L1) == 0.0,
+              "face-only anonymizer mode should leave non-face person pixels untouched");
+    }
+
+    void test_anonymizer_face_only_mode_falls_back_to_person_box_without_face() {
+        cv::Mat image = gradient_image();
+        const cv::Mat original = image.clone();
+
+        veilsight::Box anonymize = box(8, 8, 28, 22);
+        anonymize.privacy_action = "anonymize";
+
+        veilsight::AnonymizerConfig cfg;
+        cfg.face_only_when_available = true;
+        veilsight::Anonymizer anonymizer(cfg);
+        anonymizer.apply(image, {anonymize}, 1.0f, 1.0f, 0.0f, 0.0f);
+
+        const cv::Rect body_region(9, 9, 6, 6);
+        check(cv::norm(image(body_region), original(body_region), cv::NORM_L1) > 0.0,
+              "face-only anonymizer mode should fall back to full person box when no face is attached");
     }
 
     void test_face_probe_planner_emits_one_full_frame_probe() {
@@ -325,7 +445,10 @@ int main() {
     test_stream_coordinator_commits_in_order_with_out_of_order_person_detections();
     test_stale_results_are_discarded_after_commit();
     test_stream_coordinator_orders_face_recognition_identity();
+    test_independent_face_mode_queues_face_before_person_detections();
     test_anonymizer_skips_non_anonymize_boxes();
+    test_anonymizer_face_only_mode_uses_face_roi_when_available();
+    test_anonymizer_face_only_mode_falls_back_to_person_box_without_face();
     test_face_probe_planner_emits_one_full_frame_probe();
     test_passthrough_identity_preserves_recognizer_decisions();
     test_noop_identity_still_anonymizes_all_tracks();

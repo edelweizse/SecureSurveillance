@@ -125,6 +125,7 @@ namespace veilsight {
         }
 
         std::string type = "scrfd"; // none|scrfd|yunet
+        std::string association_mode = "person_bbox"; // person_bbox|independent
         int workers = 1;
         YuNetModuleConfig yunet;
         SCRFDModuleConfig scrfd;
@@ -301,6 +302,7 @@ namespace veilsight {
         std::string method = "pixelate";
         int pixelation_divisor = 10;
         int blur_kernel = 31;
+        bool face_only_when_available = false;
     };
 
     struct PipelineRuntimeConfig {

@@ -17,6 +17,10 @@ namespace veilsight {
 
         // Blur: gaussian kernel size (will be forced to odd and >= 3).
         int blur_kernel = 31;
+
+        // When true, anonymize the detected face ROI for anonymized tracks and
+        // fall back to the full person box when no face is attached.
+        bool face_only_when_available = false;
     };
 
     class Anonymizer {
@@ -50,5 +54,6 @@ namespace veilsight {
         Method method_ = Method::Pixelate;
         int pixelation_divisor_ = 10;
         int blur_kernel_ = 31;
+        bool face_only_when_available_ = false;
     };
 }

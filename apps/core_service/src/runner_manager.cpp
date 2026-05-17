@@ -204,6 +204,7 @@ namespace veilsight {
         opt.anonymizer_method = config.runtime.anonymizer.method;
         opt.anonymizer_pixelation_divisor = config.runtime.anonymizer.pixelation_divisor;
         opt.anonymizer_blur_kernel = config.runtime.anonymizer.blur_kernel;
+        opt.anonymizer_face_only_when_available = config.runtime.anonymizer.face_only_when_available;
         return opt;
     }
 

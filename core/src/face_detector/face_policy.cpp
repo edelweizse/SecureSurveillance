@@ -25,15 +25,6 @@ namespace veilsight {
             return uni > 0.0f ? inter / uni : 0.0f;
         }
 
-        RectF upper_region(const Box& person) {
-            return RectF{
-                person.x,
-                person.y,
-                person.w,
-                person.h * 0.60f,
-            };
-        }
-
         bool center_inside(const RectF& inner, const RectF& outer) {
             const float cx = inner.x + inner.w * 0.5f;
             const float cy = inner.y + inner.h * 0.5f;
@@ -49,12 +40,12 @@ namespace veilsight {
                 return false;
             }
 
-            const RectF upper = upper_region(person);
+            const RectF person_rect{person.x, person.y, person.w, person.h};
             const float face_area = area_of(face.bbox);
             if (face_area <= 0.0f) return false;
 
-            const float containment = intersection_area(face.bbox, upper) / face_area;
-            if (!center_inside(face.bbox, upper) || containment < 0.50f) {
+            const float containment = intersection_area(face.bbox, person_rect) / face_area;
+            if (!center_inside(face.bbox, person_rect) || containment < 0.50f) {
                 return false;
             }
 
@@ -67,10 +58,10 @@ namespace veilsight {
 
         float face_track_score(const FaceObservation& face,
                                const Box& person) {
-            const RectF upper = upper_region(person);
+            const RectF person_rect{person.x, person.y, person.w, person.h};
             const float face_area = std::max(1.0f, area_of(face.bbox));
-            const float containment = intersection_area(face.bbox, upper) / face_area;
-            return face.score + containment * 2.0f + iou_of(face.bbox, upper);
+            const float containment = intersection_area(face.bbox, person_rect) / face_area;
+            return face.score + containment * 2.0f + iou_of(face.bbox, person_rect);
         }
 
         Box face_only_box(const FaceObservation& face, int id) {
@@ -90,7 +81,6 @@ namespace veilsight {
         void assign_full_frame_faces(std::vector<Box>& tracks,
                                      std::vector<FaceObservation> faces,
                                      int64_t frame_id,
-                                     bool emit_unassigned_faces,
                                      const FaceDetectorModuleConfig& cfg) {
             std::sort(faces.begin(), faces.end(), [](const FaceObservation& a, const FaceObservation& b) {
                 return a.score > b.score;
@@ -121,7 +111,7 @@ namespace veilsight {
                 }
 
                 if (best_track >= person_track_count) {
-                    if (!emit_unassigned_faces) continue;
+                    if (cfg.association_mode != "independent") continue;
                     tracks.push_back(face_only_box(face, face_only_id--));
                     continue;
                 }
@@ -186,7 +176,7 @@ namespace veilsight {
         std::lock_guard<std::mutex> lock(state_->mutex);
         for (const auto& result : results) {
             if (result.kind != FaceProbeKind::FullFrame) continue;
-            assign_full_frame_faces(tracks, result.faces, frame.frame_id, frame.source_type == "webcam", cfg_);
+            assign_full_frame_faces(tracks, result.faces, frame.frame_id, cfg_);
         }
     }
 
