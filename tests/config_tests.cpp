@@ -4,6 +4,7 @@
 
 #include <chrono>
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -391,6 +392,74 @@ namespace {
               "scene_grid association_weight should parse");
     }
 
+    void test_uhd_person_detector_config_parses() {
+        const std::string yaml = minimal_config_yaml(
+            "modules:\n"
+            "  person_detector:\n"
+            "    type: \"uhd\"\n"
+            "    model_instances: 2\n"
+            "    uhd:\n"
+            "      variant: \"s_anc8_w80_64x64_opencv_inter_nearest_static_nopost\"\n"
+            "      model_path: \"models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost\"\n"
+            "      input_w: 64\n"
+            "      input_h: 64\n"
+            "      score_threshold: 0.15\n"
+            "      nms_threshold: 0.45\n"
+            "      top_k: 300\n"
+            "      ncnn_threads: 2\n");
+
+        const std::string path = write_yaml_file("veilsight_uhd_person_cfg_ok", yaml);
+        const auto cfg = veilsight::load_config_yaml(path);
+        std::filesystem::remove(path);
+
+        const auto& detector = cfg.modules.person_detector;
+        check(detector.type == "uhd", "detector.type should parse uhd");
+        check(detector.workers == 2, "uhd model_instances should parse");
+        check(detector.uhd.variant == "s_anc8_w80_64x64_opencv_inter_nearest_static_nopost",
+              "uhd.variant should parse");
+        check(detector.uhd.model_path ==
+                  "models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost",
+              "uhd.model_path should parse");
+        check(detector.uhd.param_path ==
+                  "models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost.ncnn.param",
+              "uhd.param_path should derive from model_path");
+        check(detector.uhd.bin_path ==
+                  "models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost.ncnn.bin",
+              "uhd.bin_path should derive from model_path");
+        check(detector.uhd.input_w == 64, "uhd.input_w should parse");
+        check(detector.uhd.input_h == 64, "uhd.input_h should parse");
+        check(std::fabs(detector.uhd.score_threshold - 0.15f) < 0.0001f,
+              "uhd.score_threshold should parse");
+        check(std::fabs(detector.uhd.nms_threshold - 0.45f) < 0.0001f,
+              "uhd.nms_threshold should parse");
+        check(detector.uhd.top_k == 300, "uhd.top_k should parse");
+        check(detector.uhd.ncnn_threads == 2, "uhd.ncnn_threads should parse");
+    }
+
+    void test_uhd_person_detector_config_validates() {
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  person_detector:\n"
+                  "    type: \"uhd\"\n"
+                  "    uhd:\n"
+                  "      ncnn_threads: 0\n")),
+              "uhd ncnn_threads should reject zero");
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  person_detector:\n"
+                  "    type: \"uhd\"\n"
+                  "    uhd:\n"
+                  "      input_w: 0\n")),
+              "uhd input_w should reject zero");
+        check(load_throws(minimal_config_yaml(
+                  "modules:\n"
+                  "  person_detector:\n"
+                  "    type: \"uhd\"\n"
+                  "    uhd:\n"
+                  "      input_h: 0\n")),
+              "uhd input_h should reject zero");
+    }
+
     void test_legacy_person_class_id_alias() {
         const std::string yaml =
             "server:\n"
@@ -630,7 +699,8 @@ namespace {
         if (cfg.streams[0].type == "webcam") {
             check(cfg.streams[0].webcam.fps >= 1, "full_reference webcam fps should parse");
         }
-        check(cfg.modules.person_detector.type == "yolox", "modules.person_detector should parse into detector config");
+        check(cfg.modules.person_detector.type == "yolox" || cfg.modules.person_detector.type == "uhd",
+              "modules.person_detector should parse into a supported detector config");
         check(cfg.modules.person_detector.workers == 2, "person_detector.model_instances should parse");
         check(cfg.modules.face_detector.type == "scrfd",
               "modules.face_detector should parse into face detector config");
@@ -656,8 +726,8 @@ namespace {
               "runtime anonymizer model_instances should parse");
         check(cfg.runtime.anonymizer.method == "pixelate",
               "runtime anonymizer method should parse");
-        check(!cfg.runtime.anonymizer.face_only_when_available,
-              "runtime anonymizer face_only_when_available should default to false");
+        check(cfg.runtime.anonymizer.face_only_when_available,
+              "runtime anonymizer face_only_when_available should parse from full_reference");
     }
 
     void test_model_instances_aliases_workers() {
@@ -867,6 +937,8 @@ int main() {
     test_streaming_validation_rejects_invalid_values();
     test_h264_encoder_selector();
     test_person_detector_and_scene_grid_config();
+    test_uhd_person_detector_config_parses();
+    test_uhd_person_detector_config_validates();
     test_legacy_person_class_id_alias();
     test_face_detector_recognizer_identity_config_parses();
     test_mobilefacenet_recognizer_config_parses_and_validates();

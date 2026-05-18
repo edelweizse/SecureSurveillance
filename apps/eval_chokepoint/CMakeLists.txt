@@ -1,0 +1,3 @@
+cmake_minimum_required(VERSION 3.16)
+add_executable(veilsight_eval_chokepoint main.cpp)
+target_link_libraries(veilsight_eval_chokepoint PRIVATE veilsight_core)

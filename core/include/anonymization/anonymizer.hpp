@@ -23,9 +23,25 @@ namespace veilsight {
         bool face_only_when_available = false;
     };
 
+    struct AnonymizationRegion {
+        cv::Rect roi;
+        int source_track_id = -1;
+        std::string source_track_type = "body";
+        std::string target_type = "body";
+        std::string method;
+    };
+
     class Anonymizer {
     public:
         explicit Anonymizer(AnonymizerConfig cfg);
+
+        std::vector<AnonymizationRegion> planned_regions(
+            const cv::Mat& ui_frame,
+            const std::vector<Box>& boxes_inf_space,
+            float sx,
+            float sy,
+            float tx,
+            float ty) const;
 
         void apply(cv::Mat& ui_frame,
                    const std::vector<Box>& boxes_inf_space,

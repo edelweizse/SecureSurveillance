@@ -2,6 +2,7 @@
 
 #include <face_detector/scrfd_detector.hpp>
 #include <face_detector/yunet_detector.hpp>
+#include <person_detector/uhd_detector.hpp>
 #include <person_detector/yolox_detector.hpp>
 
 #include <algorithm>
@@ -60,6 +61,23 @@ namespace veilsight {
         private:
             YoloXModuleConfig cfg_;
         };
+
+        class UhdDetectorFactory final : public IPersonDetectorFactory {
+        public:
+            explicit UhdDetectorFactory(UhdModuleConfig cfg)
+                : cfg_(std::move(cfg)) {}
+
+            std::unique_ptr<IPersonDetector> create() const override {
+                return std::make_unique<UhdDetector>(cfg_);
+            }
+
+            int backend_threads() const override {
+                return std::max(1, cfg_.ncnn_threads);
+            }
+
+        private:
+            UhdModuleConfig cfg_;
+        };
     }
 
     std::unique_ptr<IPersonDetectorFactory> create_person_detector_factory(const PersonDetectorModuleConfig& cfg) {
@@ -71,6 +89,9 @@ namespace veilsight {
         }
         if (cfg.type == "scrfd") {
             return std::make_unique<SCRFDDetectorFactory>(cfg.scrfd);
+        }
+        if (cfg.type == "uhd") {
+            return std::make_unique<UhdDetectorFactory>(cfg.uhd);
         }
         throw std::invalid_argument("[Detector] Unsupported detector type: " + cfg.type);
     }

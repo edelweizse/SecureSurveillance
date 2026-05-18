@@ -46,12 +46,26 @@ namespace veilsight {
         bool decoded_output = false;
     };
 
+    struct UhdModuleConfig {
+        std::string variant = "s_anc8_w80_64x64_opencv_inter_nearest_static_nopost";
+        std::string model_path = "models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost";
+        std::string param_path = "models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost.ncnn.param";
+        std::string bin_path = "models/people_detectors/UHD/ultratinyod_res_anc8_w80_64x64_opencv_inter_nearest_static_nopost.ncnn.bin";
+        int input_w = 64;
+        int input_h = 64;
+        float score_threshold = 0.15f;
+        float nms_threshold = 0.45f;
+        int top_k = 300;
+        int ncnn_threads = 1;
+    };
+
     struct PersonDetectorModuleConfig {
-        std::string type = "yolox"; // yolox|yunet|scrfd
+        std::string type = "yolox"; // yolox|yunet|scrfd|uhd
         int workers = 1;
         YuNetModuleConfig yunet;
         SCRFDModuleConfig scrfd;
         YoloXModuleConfig yolox;
+        UhdModuleConfig uhd;
     };
 
     struct DemoTrackerModuleConfig {
