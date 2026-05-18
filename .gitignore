@@ -13,3 +13,5 @@ web/dist/
 .sisyphus/
 .hermes/
 results/
+AGENTS.md
+chokepoint_eval

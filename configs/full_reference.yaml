@@ -124,6 +124,20 @@ modules:
 #       letterbox: true
 #       decoded_output: false
 
+    # UHD Variant S NCNN no-postprocess alternative.
+    # Requires C++ postprocess in UhdDetector.
+#     type: "uhd"
+#     model_instances: 2
+#     uhd:
+#       variant: "s_anc8_w80_64x64_opencv_inter_nearest_static_nopost"
+#       model_path: "models/people_detectors/UHD/L"
+#       input_w: 64
+#       input_h: 64
+#       score_threshold: 0.15
+#       nms_threshold: 0.45
+#       top_k: 300
+#       ncnn_threads: 2
+
   tracker:
     type: "bytetrack"
 
@@ -260,6 +274,7 @@ streams:
     type: "file"
     file:
       path: "../../../assets/cpdf_p2e_s5_c1.mp4"
+#      path: "../../../assets/output.mp4"
       fps: 5
       loop: true
     outputs:

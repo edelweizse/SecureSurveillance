@@ -45,6 +45,26 @@ namespace {
         check(factory->backend_threads() == 3, "YOLOX factory should expose configured NCNN internal threads");
     }
 
+    void check_person_detection_box_valid(const veilsight::Box& b,
+                                          float width,
+                                          float height,
+                                          const std::string& detector_name) {
+        check(b.x >= 0.0f && b.y >= 0.0f, detector_name + " boxes should be clipped to frame origin");
+        check(b.x + b.w <= width + 0.1f && b.y + b.h <= height + 0.1f,
+              detector_name + " boxes should be clipped to frame bounds");
+        check(b.w > 0.0f && b.h > 0.0f, detector_name + " boxes should have positive dimensions");
+        check(b.id == -1, detector_name + " detections should not assign track IDs");
+    }
+
+    void test_detector_factory_creates_uhd_factory() {
+        veilsight::PersonDetectorModuleConfig cfg;
+        cfg.type = "uhd";
+        cfg.uhd.ncnn_threads = 3;
+        const auto factory = veilsight::create_person_detector_factory(cfg);
+        check(factory != nullptr, "detector factory should create a UHD factory by detector.type");
+        check(factory->backend_threads() == 3, "UHD factory should expose configured NCNN internal threads");
+    }
+
     void test_yolox_ncnn_detector_loads_and_runs() {
         veilsight::PersonDetectorModuleConfig cfg;
         cfg.type = "yolox";
@@ -57,9 +77,21 @@ namespace {
         const cv::Mat frame(240, 320, CV_8UC3, cv::Scalar(0, 0, 0));
         const auto boxes = detector->detect(frame);
         for (const auto& b : boxes) {
-            check(b.x >= 0.0f && b.y >= 0.0f, "YOLOX boxes should be clipped to frame origin");
-            check(b.x + b.w <= 320.1f && b.y + b.h <= 240.1f, "YOLOX boxes should be clipped to frame bounds");
-            check(b.id == -1, "YOLOX detections should not assign track IDs");
+            check_person_detection_box_valid(b, 320.0f, 240.0f, "YOLOX");
+        }
+    }
+
+    void test_uhd_ncnn_detector_loads_and_runs() {
+        veilsight::PersonDetectorModuleConfig cfg;
+        cfg.type = "uhd";
+        cfg.uhd.input_w = 64;
+        cfg.uhd.input_h = 64;
+
+        auto detector = veilsight::create_person_detector(cfg);
+        const cv::Mat frame(240, 320, CV_8UC3, cv::Scalar(0, 0, 0));
+        const auto boxes = detector->detect(frame);
+        for (const auto& b : boxes) {
+            check_person_detection_box_valid(b, 320.0f, 240.0f, "UHD");
         }
     }
 
@@ -91,6 +123,41 @@ namespace {
         auto detector = veilsight::create_person_detector(cfg);
         const auto boxes = detector->detect(frame);
         check(!boxes.empty(), "YOLOX should detect people in store fixture frame");
+    }
+
+    void test_uhd_runs_on_store_fixture() {
+        veilsight::PersonDetectorModuleConfig cfg;
+        cfg.type = "uhd";
+        cfg.uhd.input_w = 64;
+        cfg.uhd.input_h = 64;
+        cfg.uhd.score_threshold = 0.05f;
+
+        cv::VideoCapture cap("assets/store.mp4");
+        if (!cap.isOpened()) {
+            cap.open("../assets/store.mp4");
+        }
+        if (!cap.isOpened()) {
+            cap.open("../../assets/store.mp4");
+        }
+        check(cap.isOpened(), "store fixture video should open for UHD smoke test");
+        if (!cap.isOpened()) return;
+
+        cap.set(cv::CAP_PROP_POS_MSEC, 2000.0);
+        cv::Mat frame;
+        cap.read(frame);
+        check(!frame.empty(), "store fixture frame should decode for UHD smoke test");
+        if (frame.empty()) return;
+
+        auto detector = veilsight::create_person_detector(cfg);
+        const auto boxes = detector->detect(frame);
+        check(!boxes.empty(), "UHD should detect people in store fixture frame at smoke threshold");
+        for (const auto& b : boxes) {
+            check_person_detection_box_valid(
+                b,
+                static_cast<float>(frame.cols),
+                static_cast<float>(frame.rows),
+                "UHD");
+        }
     }
 
     void test_association_returns_deterministic_matches() {
@@ -309,8 +376,11 @@ namespace {
 
 int main() {
     test_detector_factory_creates_yolox_factory();
+    test_detector_factory_creates_uhd_factory();
     test_yolox_ncnn_detector_loads_and_runs();
+    test_uhd_ncnn_detector_loads_and_runs();
     test_yolox_detects_people_in_store_fixture();
+    test_uhd_runs_on_store_fixture();
     test_association_returns_deterministic_matches();
     test_grid_disabled_equals_baseline_association();
     test_grid_soft_cost_changes_ambiguous_association();

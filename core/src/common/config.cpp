@@ -233,6 +233,28 @@ namespace veilsight {
         return cfg;
     }
 
+    static UhdModuleConfig parse_uhd_module_config(const YAML::Node& n) {
+        UhdModuleConfig cfg;
+        if (!n) return cfg;
+
+        cfg.variant = get_str(n, "variant", cfg.variant);
+        cfg.model_path = get_str(n, "model_path", cfg.model_path);
+        cfg.param_path = get_str(n, "param_path", cfg.param_path);
+        cfg.bin_path = get_str(n, "bin_path", cfg.bin_path);
+        if (n["model_path"] && !n["param_path"] && !n["bin_path"]) {
+            const std::string prefix = cfg.model_path;
+            cfg.param_path = prefix.ends_with(".ncnn.param") ? prefix : prefix + ".ncnn.param";
+            cfg.bin_path = prefix.ends_with(".ncnn.bin") ? prefix : prefix + ".ncnn.bin";
+        }
+        cfg.input_w = get_int(n, "input_w", cfg.input_w);
+        cfg.input_h = get_int(n, "input_h", cfg.input_h);
+        cfg.score_threshold = get_float(n, "score_threshold", cfg.score_threshold);
+        cfg.nms_threshold = get_float(n, "nms_threshold", cfg.nms_threshold);
+        cfg.top_k = get_int(n, "top_k", cfg.top_k);
+        cfg.ncnn_threads = get_int(n, "ncnn_threads", cfg.ncnn_threads);
+        return cfg;
+    }
+
     static SceneGridConfig parse_scene_grid_config(const YAML::Node& n, const SceneGridConfig& def = {}) {
         SceneGridConfig cfg = def;
         if (!n) return cfg;
@@ -261,6 +283,7 @@ namespace veilsight {
         cfg.yunet = parse_yunet_module_config(n["yunet"]);
         cfg.scrfd = parse_scrfd_module_config(n["scrfd"], cfg.scrfd);
         cfg.yolox = parse_yolox_module_config(n["yolox"]);
+        cfg.uhd = parse_uhd_module_config(n["uhd"]);
         return cfg;
     }
 
@@ -654,6 +677,9 @@ namespace veilsight {
         require_int_min(modules.person_detector.yunet.ncnn_threads, 1, "modules.person_detector.yunet.ncnn_threads");
         require_int_min(modules.person_detector.scrfd.ncnn_threads, 1, "modules.person_detector.scrfd.ncnn_threads");
         require_int_min(modules.person_detector.yolox.ncnn_threads, 1, "modules.person_detector.yolox.ncnn_threads");
+        require_int_min(modules.person_detector.uhd.input_w, 1, "modules.person_detector.uhd.input_w");
+        require_int_min(modules.person_detector.uhd.input_h, 1, "modules.person_detector.uhd.input_h");
+        require_int_min(modules.person_detector.uhd.ncnn_threads, 1, "modules.person_detector.uhd.ncnn_threads");
         if (modules.face_detector.type != "none") {
             if (modules.face_detector.association_mode != "person_bbox" &&
                 modules.face_detector.association_mode != "independent") {
